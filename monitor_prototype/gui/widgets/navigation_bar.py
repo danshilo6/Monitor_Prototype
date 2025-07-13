@@ -1,8 +1,7 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QButtonGroup
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QIcon
-from functools import partial
-from typing import Dict
+from .button_group_manager import ButtonGroupManager
+from utils.paths import get_icon_path
 
 _H_MARGIN_PX = 6
 _V_MARGIN_PX = 4
@@ -16,13 +15,22 @@ class NavigationBar(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self._btn_map: Dict[str, QPushButton] = {}
-        self._btn_group = QButtonGroup(self)
-        self._btn_group.setExclusive(True)
+        self._button_manager = ButtonGroupManager()
+        
+        # Forward the signal from button manager to maintain API compatibility
+        self._button_manager.selection_changed.connect(self.page_changed.emit)
+        
+        self._setup_ui()
 
+    # --------------------------------------------------------------------------
+    # private setup methods
+    # --------------------------------------------------------------------------
+    
+    def _setup_ui(self) -> None:
+        """Initialize and layout all UI components"""
         # ---- layout -----------------------------------------------------------------
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignTop)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         layout.setContentsMargins(
             _H_MARGIN_PX, _V_MARGIN_PX,
             _H_MARGIN_PX, _V_MARGIN_PX,
@@ -31,14 +39,15 @@ class NavigationBar(QWidget):
 
         # ---- buttons ----------------------------------------------------------------
         for label, page, icon in [
-            ("Failing Devices", "failing_devices", "warning.svg"),
+            ("Alerts", "alerts", "warning.svg"),
             ("Contacts", "contacts", "contacts.svg"),
             ("Settings", "settings", "settings.svg"),
         ]:
-            self._add_button(layout, label, page, icon)
+            btn = self._button_manager.add_button(label, page, get_icon_path(icon))
+            layout.addWidget(btn)
 
         # default selection
-        self.select("failing_devices")
+        self.select("alerts")
 
 
     # --------------------------------------------------------------------------
@@ -47,26 +56,7 @@ class NavigationBar(QWidget):
     
     def select(self, page_name: str) -> None:
         """Highlights button *page_name* (does not emit signal)"""
-        if btn := self._btn_map.get(page_name):
-            btn.setChecked(True)
-
-    # --------------------------------------------------------------------------
-    # internal helpers
-    # --------------------------------------------------------------------------
-
-    def _add_button(self, layout: QVBoxLayout, label: str, page_name: str, 
-        icon_path: str | None = None) -> None:
-        """Creates a button and adds it to the layout"""
-        btn = QPushButton(label)
-        btn.setObjectName(page_name)
-        btn.setCheckable(True)
-        if icon_path:
-            btn.setIcon(QIcon(f"{ICON_PREFIX}/{icon_path}"))
-        btn.clicked.connect(partial(self.page_changed.emit, page_name))
-
-        self._btn_group.addButton(btn)
-        self._btn_map[page_name] = btn
-        layout.addWidget(btn)
+        self._button_manager.select(page_name)
         
     
 
