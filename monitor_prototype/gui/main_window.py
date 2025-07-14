@@ -1,10 +1,11 @@
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel
+from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
 from widgets.navigation_bar import NavigationBar
+from pages.page_factory import PageFactory
 from styles import style_manager
 
 # UI Layout Constants
-_WINDOW_WIDTH = 1000
+_WINDOW_WIDTH = 600
 _WINDOW_HEIGHT = 700
 _WINDOW_X = 100
 _WINDOW_Y = 100
@@ -16,6 +17,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+        self._current_page = None
         self._content_area: QLabel = None
         self._nav_bar: NavigationBar = None
         self._setup_window()
@@ -48,9 +50,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._nav_bar)
 
         # ---- content area -------------------------------------------------------
-        self._content_area = QLabel()
+        self._content_area = QWidget()
         self._content_area.setObjectName("content-area")  # For CSS targeting
-        self._content_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._content_layout = QVBoxLayout(self._content_area)
         layout.addWidget(self._content_area, 1)  # Takes remaining space
 
         # Set initial content
@@ -62,7 +64,8 @@ class MainWindow(QMainWindow):
             # Load and combine all required styles
             combined_styles = style_manager.get_combined_styles(
                 "main_window",
-                "navigation_bar"
+                "navigation_bar",
+                "alerts"
             )
             
             # Apply to the main window
@@ -70,7 +73,6 @@ class MainWindow(QMainWindow):
             
         except FileNotFoundError as e:
             print(f"Warning: Could not load styles: {e}")
-            # Fallback to minimal inline styles if files don't exist
             self._apply_fallback_styles()
 
     def _apply_fallback_styles(self) -> None:
@@ -82,7 +84,7 @@ class MainWindow(QMainWindow):
         }
         #content-area { 
             background-color: #f8f9fa; 
-            padding: 40px; 
+            padding: 20px; 
             font-size: 16px; 
             color: #333;
         }
@@ -125,46 +127,32 @@ class MainWindow(QMainWindow):
     # private helpers
     # --------------------------------------------------------------------------
 
+    def _clear_content(self) -> None:
+        """Clears all existing content area"""
+        for i in reversed(range(self._content_layout.count())):
+            child = self._content_layout.itemAt(i).widget()
+            if child:
+                child.setParent(None)
+
     def _update_content(self, page_name: str) -> None:
         """Update content area based on selected page"""
-        content_data = self._get_page_content(page_name)
-        
-        formatted_content = f"""
-        <div style="text-align: center;">
-            <h1 style="color: #2d3142; margin-bottom: 20px;">{content_data['title']}</h1>
-            <p style="color: #666; font-size: 14px; line-height: 1.6; max-width: 600px; margin: 0 auto;">
-                {content_data['description']}
-            </p>
-            <div style="margin-top: 30px; padding: 20px; background-color: #e9ecef; border-radius: 8px; max-width: 400px; margin-left: auto; margin-right: auto;">
-                <strong>Status:</strong> {content_data['status']}
-            </div>
-        </div>
-        """
-        
-        self._content_area.setText(formatted_content)
-
-    def _get_page_content(self, page_name: str) -> dict:
-        """Get content data for the specified page"""
-        content_map = {
-            "alerts": {
-                "title": "System Alerts",
-                "description": "This page displays real-time alerts and notifications about system issues, device failures, and critical events that require immediate attention.",
-                "status": "3 active alerts require attention"
-            },
-            "contacts": {
-                "title": "Contact Directory",
-                "description": "Access your complete contact directory with emergency contacts, technical support teams, and system administrators. Quickly reach the right people when issues arise.",
-                "status": "27 contacts available"
-            },
-            "settings": {
-                "title": "Application Settings",
-                "description": "Configure monitoring thresholds, notification preferences, display options, and system behaviors. Customize the application to meet your specific monitoring needs.",
-                "status": "All settings configured"
-            }
-        }
-        
-        return content_map.get(page_name, {
-            "title": "Unknown Page",
-            "description": f"The requested page '{page_name}' could not be found.",
-            "status": "Page not found"
-        })
+        if self._current_page == page_name:
+            return
+        self._clear_content()
+        # Create and add new page
+        try:
+            page = PageFactory.create_page(page_name)
+            self._content_layout.addWidget(page)
+            self._current_page = page_name
+        except ValueError as e:
+            print(f"Error creating page: {e}")
+            # Fallback to error page
+            error_widget = self._create_error_widget(page_name)
+            self._content_layout.addWidget(error_widget)
+    
+    def _create_error_widget(self, page_name: str) -> QWidget:
+        """Create error widget for unknown pages"""
+        placeholder = QLabel()
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)    
+        placeholder.setText(formatted_content)
+        return placeholder

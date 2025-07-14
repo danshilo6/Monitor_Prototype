@@ -1,0 +1,103 @@
+/* Alerts List Styles */
+
+/* Page Header */
+QLabel#page-header {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2d3142;
+    margin: 2px 0px;
+    padding: 2px;
+    background-color: #f8f9fa;
+}
+
+
+AlertsList {
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+}
+
+/* QTableWidget Styles */
+AlertsList QTableWidget {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    gridline-color: #f0f0f0;
+}
+
+AlertsList QTableWidget::item {
+    padding: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    text-align: center;
+}
+
+/* Remove selection highlighting */
+AlertsList QTableWidget::item:selected {
+    background-color: transparent;
+}
+
+AlertsList QTableWidget::item:focus {
+    background-color: transparent;
+    outline: none;
+}
+
+AlertsList QHeaderView::section {
+    background-color: #f8f9fa;
+    padding: 8px;
+    border: none;
+    border-bottom: 2px solid #e0e0e0;
+    font-weight: bold;
+    color: #2d3142;
+    text-align: center;
+}
+
+AlertsList QScrollArea {
+    border: none;
+    background-color: transparent;
+}
+
+AlertsList QScrollArea > QWidget > QWidget {
+    background-color: #ffffff;
+}
+
+AlertsList QScrollBar:vertical {
+    background-color: #f5f5f5;
+    width: 8px;
+    border-radius: 4px;
+}
+
+AlertsList QScrollBar::handle:vertical {
+    background-color: #c0c0c0;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+AlertsList QScrollBar::handle:vertical:hover {
+    background-color: #a0a0a0;
+}
+
+AlertsList QScrollBar::add-line:vertical,
+AlertsList QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* Remove Button Styles for Table */
+AlertsList QPushButton {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    min-width: 12px;
+    max-width: 20px;
+}
+
+AlertsList QPushButton:hover {
+    background-color: #c82333;
+}
+
+AlertsList QPushButton:pressed {
+    background-color: #bd2130;
+}
