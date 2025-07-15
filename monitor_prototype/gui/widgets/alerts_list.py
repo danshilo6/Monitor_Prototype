@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QIcon
-from utils.paths import get_icon_path
+from ..utils.paths import get_icon_path
 from .alert_data import Alert, AlertType
 from typing import List
 
@@ -13,6 +13,7 @@ class AlertsList(QWidget):
     def __init__(self):
         super().__init__()
         self._alerts = []
+        self._alert_db = None  # Will be set by parent page
         self.setObjectName("AlertsList")  # Set object name for styling
         self._setup_ui()
     
@@ -47,6 +48,10 @@ class AlertsList(QWidget):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Remove
         
         layout.addWidget(self._table)
+    
+    def set_alert_database(self, alert_db):
+        """Set the alert database reference"""
+        self._alert_db = alert_db
     
     def add_alert(self, alert: Alert):
         """Add an alert to the table"""
@@ -93,8 +98,14 @@ class AlertsList(QWidget):
         self._alerts.append(alert)
     
     def _remove_by_id(self, alert_id: str):
-        """Remove alert by ID, finding the correct row"""
-        # Find the row containing this alert ID
+        """Remove alert by ID from both database and UI"""
+        # Remove from database first
+        if self._alert_db:
+            success = self._alert_db.resolve_alert(alert_id)
+            if not success:
+                print(f"Failed to resolve alert {alert_id} in database")
+        
+        # Remove from UI
         for row in range(self._table.rowCount()):
             if row < len(self._alerts) and self._alerts[row].id == alert_id:
                 self._alerts.pop(row)

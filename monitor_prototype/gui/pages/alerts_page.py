@@ -3,11 +3,16 @@
 from PySide6.QtWidgets import QVBoxLayout, QLabel
 from PySide6.QtCore import Qt
 from .base_page import BasePage
-from widgets.alerts_list import AlertsList
-from widgets.alert_data import generate_dummy_alerts
+from ..widgets.alerts_list import AlertsList
+from ..widgets.alert_data import generate_dummy_alerts
+from ...services.alert_db import AlertDatabase
 
 class AlertsPage(BasePage):
-    """Alerts management page"""
+    """Alerts management page with persistent storage"""
+
+    def __init__(self):
+        self.alert_db = AlertDatabase()
+        super().__init__()
     
     def setup_ui(self):
         """Setup the alerts page UI"""
@@ -22,15 +27,27 @@ class AlertsPage(BasePage):
         
         # Create alerts list widget
         self._alerts_list = AlertsList()
+        self._alerts_list.set_alert_database(self.alert_db)  # Connect database
         layout.addWidget(self._alerts_list)
         
-        # Load dummy data
+        # Load alerts from database
         self._load_alerts()
     
     def _load_alerts(self):
-        """Load alerts data into the list"""
-        dummy_alerts = generate_dummy_alerts()
-        for alert in dummy_alerts:
+        """Load alerts from database"""
+        # Load existing alerts from database
+        saved_alerts = self.alert_db.get_active_alerts()
+        
+        # ------ remove later --------------------------------------
+        # If no saved alerts, generate dummy data (for testing)
+        if not saved_alerts:
+            dummy_alerts = generate_dummy_alerts()
+            for alert in dummy_alerts:
+                self.alert_db.add_alert(alert)  # Save to database
+            saved_alerts = self.alert_db.get_active_alerts()
+        # ----------------------------------------------------------
+        # Display alerts in UI
+        for alert in saved_alerts:
             self._alerts_list.add_alert(alert)
     
     def get_title(self) -> str:
@@ -42,9 +59,18 @@ class AlertsPage(BasePage):
         return "This page displays real-time alerts and notifications about system issues, device failures, and critical events that require immediate attention."
     
     def refresh_alerts(self):
-        """Refresh the alerts list (for future use)"""
-        # This method can be called to refresh data from a real data source
-        pass
+        """Refresh the alerts list from database"""
+        # Clear current display
+        self._alerts_list._alerts.clear()
+        self._alerts_list._table.setRowCount(0)
+        
+        # Reload from database
+        self._load_alerts()
+    
+    def add_new_alert(self, alert):
+        """Add new alert (called by monitoring system)"""
+        self.alert_db.add_alert(alert)
+        self._alerts_list.add_alert(alert)
     
     def cleanup(self):
         """Clean up resources when page is destroyed"""

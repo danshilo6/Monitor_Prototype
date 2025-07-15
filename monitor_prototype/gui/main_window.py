@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
-from widgets.navigation_bar import NavigationBar
-from pages.page_factory import PageFactory
-from styles import style_manager
+from .widgets.navigation_bar import NavigationBar
+from .pages.page_factory import PageFactory
+from .styles import style_manager
 
 # UI Layout Constants
 _WINDOW_WIDTH = 600
@@ -65,7 +65,9 @@ class MainWindow(QMainWindow):
             combined_styles = style_manager.get_combined_styles(
                 "main_window",
                 "navigation_bar",
-                "alerts"
+                "alerts",
+                "contacts",
+                "settings"
             )
             
             # Apply to the main window

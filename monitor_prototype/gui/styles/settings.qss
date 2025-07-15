@@ -1,0 +1,240 @@
+/* Settings page styling */
+
+/* Tab Widget */
+QTabWidget#settings-tabs {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+}
+
+/* Tab Bar */
+QTabWidget#settings-tabs::pane {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background-color: #ffffff;
+}
+
+/* Individual Tabs */
+QTabWidget#settings-tabs QTabBar::tab {
+    background-color: #f8f9fa;
+    color: #2d3142;
+    padding: 6px 6px;
+    margin-right: 1px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border: 1px solid #e0e0e0;
+    border-bottom: none;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+QTabWidget#settings-tabs QTabBar::tab:selected {
+    background-color: #ffffff;
+    color: #1976d2;
+    border-bottom: 2px solid #1976d2;
+}
+
+QTabWidget#settings-tabs QTabBar::tab:hover {
+    background-color: #e9ecef;
+}
+
+/* Settings Input Fields */
+QLineEdit#settings-input {
+    padding: 8px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: #ffffff;
+    min-width: 200px;
+}
+
+QLineEdit#settings-input:enabled {
+    border-color: #1976d2;
+    background-color: #ffffff;
+}
+
+QLineEdit#settings-input:disabled {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border-color: #e0e0e0;
+}
+
+QLineEdit#settings-input:focus {
+    border-color: #1976d2;
+    outline: none;
+}
+
+/* Read-only Display Fields */
+QLineEdit#settings-display {
+    padding: 8px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: #f8f9fa;
+    color: #495057;
+    min-width: 200px;
+}
+
+/* Settings Buttons */
+QPushButton#settings-button {
+    background-color: #1976d2;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 80px;
+}
+
+QPushButton#settings-button:hover {
+    background-color: #1565c0;
+}
+
+QPushButton#settings-button:pressed {
+    background-color: #0d47a1;
+}
+
+/* Settings Button Active State (when in edit mode) */
+QPushButton#settings-button-active {
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 80px;
+}
+
+QPushButton#settings-button-active:hover {
+    background-color: #45a049;
+}
+
+QPushButton#settings-button-active:pressed {
+    background-color: #3d8b40;
+}
+
+/* Form Layout Styling */
+QFormLayout QLabel {
+    font-weight: 500;
+    color: #2d3142;
+    font-size: 14px;
+    padding: 0px 14px;  /* Vertical padding to match input height */
+}
+
+/* Placeholder Text */
+QLabel#tab-placeholder {
+    color: #6c757d;
+    font-size: 18px;
+    font-weight: 300;
+    margin: 50px 0px;
+}
+
+/* Location Name Dialog Styling */
+QDialog#location-name-dialog {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    min-height: 200px;
+    max-height: 300px;
+}
+
+/* Dialog Labels */
+QDialog#location-name-dialog QLabel {
+    color: #2d3142;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+/* Dialog Input Fields */
+QDialog#location-name-dialog QLineEdit {
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: #ffffff;
+    min-height: 20px;
+}
+
+QDialog#location-name-dialog QLineEdit:focus {
+    border-color: #1976d2;
+    outline: none;
+}
+
+/* Dialog Buttons */
+QDialog#location-name-dialog QPushButton {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 80px;
+    min-height: 16px;
+}
+
+/* Save Button */
+QDialog#location-name-dialog QPushButton[text="Save"] {
+    background-color: #1976d2;
+    color: white;
+}
+
+QDialog#location-name-dialog QPushButton[text="Save"]:hover {
+    background-color: #1565c0;
+}
+
+QDialog#location-name-dialog QPushButton[text="Save"]:pressed {
+    background-color: #0d47a1;
+}
+
+/* Cancel Button */
+QDialog#location-name-dialog QPushButton[text="Cancel"] {
+    background-color: #6c757d;
+    color: white;
+}
+
+QDialog#location-name-dialog QPushButton[text="Cancel"]:hover {
+    background-color: #5a6268;
+}
+
+QDialog#location-name-dialog QPushButton[text="Cancel"]:pressed {
+    background-color: #4e555b;
+}
+
+/* Settings Checkbox */
+QCheckBox#settings-checkbox {
+    font-size: 14px;
+    color: #2d3142;
+    spacing: 8px;
+}
+
+QCheckBox#settings-checkbox::indicator {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #e0e0e0;
+    border-radius: 3px;
+    background-color: #ffffff;
+}
+
+QCheckBox#settings-checkbox::indicator:checked {
+    image: url(monitor_prototype/gui/icons/checkmark.svg);
+}
+
+QCheckBox#settings-checkbox::indicator:hover {
+    border-color: #1976d2;
+}
+
+/* Section Labels */
+QLabel#settings-section-label {
+    font-weight: 600;
+    font-size: 16px;
+    color: #1976d2;
+    margin-top: 10px;
+    margin-bottom: 5px;
+}
+
+QLineEdit#settings-input:focus {
+    border-color: #1976d2;
+    outline: none;
+}

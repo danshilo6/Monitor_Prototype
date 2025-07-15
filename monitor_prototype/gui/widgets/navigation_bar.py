@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Signal, Qt
 from .button_group_manager import ButtonGroupManager
-from utils.paths import get_icon_path
+from ..utils.paths import get_icon_path
 
 _H_MARGIN_PX = 6
 _V_MARGIN_PX = 4

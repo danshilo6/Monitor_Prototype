@@ -22,3 +22,12 @@ QLabel {
     border: none;
     background: transparent;
 }
+
+/* Custom focus styles - maintains accessibility with better appearance */
+QPushButton:focus {
+    outline: none;
+}
+
+QLabel:focus {
+    outline: none;
+}
