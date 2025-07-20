@@ -1,8 +1,12 @@
+from pathlib import Path
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
 from .widgets.navigation_bar import NavigationBar
+from .widgets.info_banner import InfoBanner
 from .pages.page_factory import PageFactory
 from .styles import style_manager
+from ..services.config_service import ConfigService
 
 # UI Layout Constants
 _WINDOW_WIDTH = 600
@@ -14,16 +18,26 @@ _SIDEBAR_WIDTH = 200
 
 class MainWindow(QMainWindow):
     """Main application window with navigation sidebar and content area"""
+    
+    _instance = None  # Singleton instance
 
     def __init__(self) -> None:
         super().__init__()
+        MainWindow._instance = self  # Store reference for global access
         self._current_page = None
-        self._content_area: QWidget()
+        self._content_area: QWidget
         self._nav_bar: NavigationBar
+        self._info_banner: InfoBanner
+        self._config_service = ConfigService.get_instance()  # Use singleton instance
         self._setup_window()
         self._setup_ui()
         self._apply_styles()
         self._connect_signals()
+
+    @classmethod
+    def get_instance(cls):
+        """Get the current MainWindow instance"""
+        return cls._instance
 
     # --------------------------------------------------------------------------
     # private setup methods
@@ -31,29 +45,53 @@ class MainWindow(QMainWindow):
 
     def _setup_window(self) -> None:
         """Configure main window properties"""
-        self.setWindowTitle("Monitor Prototype")
+        self.setWindowTitle("Monitor")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_WIDTH, _WINDOW_HEIGHT)
         self.setMinimumSize(800, 600)
+        self._setup_window_icon()
+    
+    def _setup_window_icon(self) -> None:
+        """sets the main window's icon"""
+        icon_path = Path(__file__).parent / "icons" / "ecg-monitor.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+            print("icon set successfully")
+        else:
+            print("icon not found")
 
     def _setup_ui(self) -> None:
         """Initialize and layout all UI components"""
-        # ---- main layout -------------------------------------------------------
+        # ---- main layout (vertical to stack banner on top) --------------------
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        layout = QHBoxLayout(main_widget)
-        layout.setSpacing(0)  # No gap between sidebar and content
-        layout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QVBoxLayout(main_widget)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # ---- info banner (top) --------------------------------------------------
+        self._info_banner = InfoBanner(self._config_service)
+        main_layout.addWidget(self._info_banner)
+
+        # ---- horizontal layout for navigation and content ----------------------
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(0)  # No gap between sidebar and content
+        content_layout.setContentsMargins(0, 0, 0, 0)
 
         # ---- navigation sidebar ------------------------------------------------
         self._nav_bar = NavigationBar()
         self._nav_bar.setFixedWidth(_SIDEBAR_WIDTH)
-        layout.addWidget(self._nav_bar)
+        content_layout.addWidget(self._nav_bar)
 
         # ---- content area -------------------------------------------------------
         self._content_area = QWidget()
         self._content_area.setObjectName("content-area")  # For CSS targeting
         self._content_layout = QVBoxLayout(self._content_area)
-        layout.addWidget(self._content_area, 1)  # Takes remaining space
+        content_layout.addWidget(self._content_area, 1)  # Takes remaining space
+
+        # Add horizontal layout to main layout
+        content_widget = QWidget()
+        content_widget.setLayout(content_layout)
+        main_layout.addWidget(content_widget, 1)  # Takes remaining space
 
         # Set initial content
         self._update_content("alerts")
@@ -65,6 +103,7 @@ class MainWindow(QMainWindow):
             combined_styles = style_manager.get_combined_styles(
                 "main_window",
                 "navigation_bar",
+                "info_banner",
                 "alerts",
                 "contacts",
                 "settings"
@@ -158,3 +197,13 @@ class MainWindow(QMainWindow):
         placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)    
         placeholder.setText(f"Error: Page '{page_name}' not found")
         return placeholder
+
+    def refresh_banner(self):
+        """Refresh the info banner (called when settings change)"""
+        if hasattr(self, '_info_banner'):
+            self._info_banner.refresh()
+    
+    def refresh_banner_location(self):
+        """Refresh only the location in the banner (for better performance)"""
+        if hasattr(self, '_info_banner'):
+            self._info_banner.refresh_location()

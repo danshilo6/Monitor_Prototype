@@ -88,6 +88,17 @@ class GeneralSettings(QWidget):
         if accepted and new_location_name:
             self._location_name_display.setText(new_location_name)
             self._config.set("general", "location_name", new_location_name)
+            print(f"DEBUG: Location name saved to config: {new_location_name}")  # Debug
+            
+            # Refresh the banner to show the updated location name
+            from ...main_window import MainWindow
+            main_window = MainWindow.get_instance()
+            print(f"DEBUG: MainWindow instance: {main_window}")  # Debug
+            if main_window:
+                print("DEBUG: Calling refresh_banner_location...")  # Debug
+                main_window.refresh_banner_location()
+            else:
+                print("DEBUG: MainWindow instance is None!")  # Debug
     
     def _choose_file(self):
         """Open file dialog to choose monitored program"""

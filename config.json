@@ -1,11 +1,11 @@
 {
   "general": {
-    "location_name": "Dan",
+    "location_name": "Dan's Home",
     "monitor_program_path": ""
   },
   "versions": {
-    "monitor_version": "15-08-25",
-    "ein_tzofia_version": "15-08-25"
+    "monitor_version": "12-07-25",
+    "ein_tzofia_version": "12-07-25"
   },
   "system": {
     "enable_restart": true,

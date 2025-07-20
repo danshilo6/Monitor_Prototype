@@ -15,7 +15,7 @@ class SettingsPage(BasePage):
         self._general_settings = None
         self._system_settings = None
         self._devices_settings = None
-        self.config_service = ConfigService()
+        self.config_service = ConfigService.get_instance()  # Use singleton instance
         super().__init__()
     
     def setup_ui(self):
