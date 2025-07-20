@@ -238,3 +238,64 @@ QLineEdit#settings-input:focus {
     border-color: #1976d2;
     outline: none;
 }
+
+QPushButton#open-button {
+    background-color: #1976d2;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 80px;
+}
+
+QPushButton#open-button:hover {
+    background-color: #1565c0;
+}
+
+QPushButton#open-button:pressed {
+    background-color: #0d47a1;
+}
+
+/* Close Button - Red */
+QPushButton#close-button {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 80px;
+}
+
+QPushButton#close-button:hover {
+    background-color: #e53935;
+}
+
+QPushButton#close-button:pressed {
+    background-color: #d32f2f;
+}
+
+/* Blue Save Button */
+QPushButton#blue-button {
+    background-color: #1976d2;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 120px;
+    min-height: 20px;
+    margin-top: 10px;
+}
+
+QPushButton#blue-button:hover {
+    background-color: #1565c0;
+}
+
+QPushButton#blue-button:pressed {
+    background-color: #0d47a1;
+}

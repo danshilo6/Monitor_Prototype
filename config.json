@@ -1,0 +1,20 @@
+{
+  "general": {
+    "location_name": "Dan",
+    "monitor_program_path": ""
+  },
+  "versions": {
+    "monitor_version": "15-08-25",
+    "ein_tzofia_version": "15-08-25"
+  },
+  "system": {
+    "enable_restart": true,
+    "minutes_to_restart": "5",
+    "startup_snooze_time": "5"
+  },
+  "devices": {
+    "relay_fail_threshold": "250",
+    "camera_fail_threshold": "2000",
+    "camera_log_minutes": "4"
+  }
+}

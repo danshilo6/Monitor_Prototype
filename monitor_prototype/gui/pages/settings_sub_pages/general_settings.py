@@ -8,9 +8,11 @@ from ...widgets.location_name_dialog import LocationNameDialog
 class GeneralSettings(QWidget):
     """General settings tab widget"""
     
-    def __init__(self):
+    def __init__(self, config_service):
         super().__init__()
+        self._config = config_service
         self._setup_ui()
+        self._load_from_config()
     
     def _setup_ui(self):
         """Setup the general settings UI"""
@@ -83,10 +85,9 @@ class GeneralSettings(QWidget):
         """Open dialog to edit location name"""
         current_location_name = self._location_name_display.text()
         accepted, new_location_name = LocationNameDialog.edit_location_name(current_location_name, self)
-        
         if accepted and new_location_name:
             self._location_name_display.setText(new_location_name)
-            self._on_location_name_changed()
+            self._config.set("general", "location_name", new_location_name)
     
     def _choose_file(self):
         """Open file dialog to choose monitored program"""
@@ -96,10 +97,25 @@ class GeneralSettings(QWidget):
             "",
             "Executable Files (*.exe);;All Files (*)"
         )
-        
         if file_path:
             self._filepath_display.setText(file_path)
-            self._on_monitor_path_changed()
+            self._config.set("general", "monitor_program_path", file_path)
+
+    def _load_from_config(self):
+        """Load settings from config on startup"""
+        # Block signals to prevent saving during load
+        self._location_name_display.blockSignals(True)
+        self._filepath_display.blockSignals(True)
+        
+        # Load values
+        location = self._config.get("general", "location_name", "")
+        self._location_name_display.setText(location)
+        program_path = self._config.get("general", "monitor_program_path", "")
+        self._filepath_display.setText(program_path)
+        
+        # Re-enable signals
+        self._location_name_display.blockSignals(False)
+        self._filepath_display.blockSignals(False)
     
     def get_location_name(self) -> str:
         """Get the current location name"""

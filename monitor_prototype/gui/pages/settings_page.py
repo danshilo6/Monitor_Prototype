@@ -3,16 +3,19 @@
 from PySide6.QtWidgets import QVBoxLayout, QLabel, QTabWidget
 from PySide6.QtCore import Qt
 from .base_page import BasePage
-from .settings_sub_pages import GeneralSettings, AdvancedSettings, DevicesSettings
+from .settings_sub_pages.general_settings import GeneralSettings
+from .settings_sub_pages.system_settings import SystemSettings  
+from .settings_sub_pages.devices_settings import DevicesSettings
+from ...services.config_service import ConfigService
 
 class SettingsPage(BasePage):
     """Settings page with tabbed sub-pages"""
     
     def __init__(self):
         self._general_settings = None
-        self._advanced_settings = None
+        self._system_settings = None
         self._devices_settings = None
-        
+        self.config_service = ConfigService()
         super().__init__()
     
     def setup_ui(self):
@@ -32,26 +35,26 @@ class SettingsPage(BasePage):
         self._tab_widget.setObjectName("settings-tabs")
         
         # Create sub-pages
-        self._general_settings = GeneralSettings()
-        self._advanced_settings = AdvancedSettings()
-        self._devices_settings = DevicesSettings()
+        self._general_settings = GeneralSettings(self.config_service)
+        self._system_settings = SystemSettings(self.config_service)
+        self._devices_settings = DevicesSettings(self.config_service)
         
         # Add tabs
         self._tab_widget.addTab(self._general_settings, "General")
-        self._tab_widget.addTab(self._advanced_settings, "System")
+        self._tab_widget.addTab(self._system_settings, "System")
         self._tab_widget.addTab(self._devices_settings, "Devices")
         
         layout.addWidget(self._tab_widget)
     
-    def get_general_settings(self) -> GeneralSettings:
+    def get_general_settings(self) -> GeneralSettings | None:
         """Get the general settings widget"""
         return self._general_settings
     
-    def get_advanced_settings(self) -> AdvancedSettings:
-        """Get the advanced settings widget"""
-        return self._advanced_settings
+    def get_system_settings(self) -> SystemSettings | None:
+        """Get the system settings widget"""
+        return self._system_settings
     
-    def get_devices_settings(self) -> DevicesSettings:
+    def get_devices_settings(self) -> DevicesSettings | None:
         """Get the devices settings widget"""
         return self._devices_settings
     

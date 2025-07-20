@@ -1,7 +1,7 @@
-"""Settings sub-pages initialization"""
+﻿"""Settings sub-pages initialization"""
 
 from .general_settings import GeneralSettings
-from .advanced_settings import AdvancedSettings
+from .system_settings import SystemSettings  
 from .devices_settings import DevicesSettings
 
-__all__ = ['GeneralSettings', 'AdvancedSettings', 'DevicesSettings']
+__all__ = ["GeneralSettings", "SystemSettings", "DevicesSettings"]

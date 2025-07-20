@@ -18,8 +18,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self._current_page = None
-        self._content_area: QLabel = None
-        self._nav_bar: NavigationBar = None
+        self._content_area: QWidget()
+        self._nav_bar: NavigationBar
         self._setup_window()
         self._setup_ui()
         self._apply_styles()
@@ -156,5 +156,5 @@ class MainWindow(QMainWindow):
         """Create error widget for unknown pages"""
         placeholder = QLabel()
         placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)    
-        placeholder.setText(formatted_content)
+        placeholder.setText(f"Error: Page '{page_name}' not found")
         return placeholder
