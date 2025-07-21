@@ -185,11 +185,23 @@ class MainWindow(QMainWindow):
             page = PageFactory.create_page(page_name)
             self._content_layout.addWidget(page)
             self._current_page = page_name
+            
+            # Connect signals if it's a settings page
+            self._connect_page_signals(page_name, page)
+            
         except ValueError as e:
             print(f"Error creating page: {e}")
             # Fallback to error page
             error_widget = self._create_error_widget(page_name)
             self._content_layout.addWidget(error_widget)
+    
+    def _connect_page_signals(self, page_name: str, page):
+        """Connect signals from pages to main window"""
+        if page_name == "settings":
+            # Connect the location changed signal from general settings
+            general_settings = page.get_general_settings()
+            if general_settings:
+                general_settings.location_changed.connect(self.refresh_banner_location)
     
     def _create_error_widget(self, page_name: str) -> QWidget:
         """Create error widget for unknown pages"""
