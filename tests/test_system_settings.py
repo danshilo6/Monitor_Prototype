@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 from PySide6.QtWidgets import QApplication
 import sys
 
-from monitor_prototype.gui.pages.settings_sub_pages.system_settings import SystemSettings
-from monitor_prototype.services.config_service import ConfigService
+from monitor.gui.pages.settings_sub_pages.system_settings import SystemSettings
+from monitor.services.config_service import ConfigService
 
 
 @pytest.fixture

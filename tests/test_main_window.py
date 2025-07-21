@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch, MagicMock
 from PySide6.QtWidgets import QApplication
 import sys
 
-from monitor_prototype.gui.main_window import MainWindow
-from monitor_prototype.services.config_service import ConfigService
+from monitor.gui.main_window import MainWindow
+from monitor.services.config_service import ConfigService
 
 
 @pytest.fixture

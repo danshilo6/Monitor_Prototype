@@ -1,0 +1,33 @@
+/* Main Window Styles - Qt Compatible */
+QMainWindow {
+    background-color: #ffffff;
+}
+
+/* Content Area Styles */
+#content-area {
+    font-size: 16px;
+    color: #333;
+    background-color: #f8f9fa;
+    padding: 40px;
+    border: none;
+}
+
+/* General styling for better appearance */
+QWidget {
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+/* Ensure clean appearance */
+QLabel {
+    border: none;
+    background: transparent;
+}
+
+/* Custom focus styles - maintains accessibility with better appearance */
+QPushButton:focus {
+    outline: none;
+}
+
+QLabel:focus {
+    outline: none;
+}

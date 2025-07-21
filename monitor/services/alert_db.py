@@ -3,7 +3,7 @@
 import sqlite3
 from typing import List
 from datetime import datetime
-from ..gui.widgets.alert_data import Alert, AlertType
+from monitor.services.alert_models import Alert, AlertType
 
 class AlertDatabase:
     """Database for persistent alert storage"""

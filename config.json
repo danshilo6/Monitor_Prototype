@@ -9,11 +9,11 @@
   },
   "system": {
     "enable_restart": true,
-    "minutes_to_restart": "5",
-    "startup_snooze_time": "5"
+    "minutes_to_restart": "4",
+    "startup_snooze_time": "4"
   },
   "devices": {
-    "relay_fail_threshold": "250",
+    "relay_fail_threshold": "200",
     "camera_fail_threshold": "2000",
     "camera_log_minutes": "4"
   }

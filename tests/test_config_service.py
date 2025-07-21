@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch, mock_open
 
-from monitor_prototype.services.config_service import ConfigService
+from monitor.services.config_service import ConfigService
 
 
 @pytest.fixture

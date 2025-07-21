@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 from PySide6.QtWidgets import QApplication
 import sys
 
-from monitor_prototype.gui.widgets.info_banner import InfoBanner
-from monitor_prototype.services.config_service import ConfigService
+from monitor.gui.widgets.info_banner import InfoBanner
+from monitor.services.config_service import ConfigService
 
 
 @pytest.fixture

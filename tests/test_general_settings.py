@@ -6,8 +6,8 @@ from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtCore import QTimer
 import sys
 
-from monitor_prototype.gui.pages.settings_sub_pages.general_settings import GeneralSettings
-from monitor_prototype.services.config_service import ConfigService
+from monitor.gui.pages.settings_sub_pages.general_settings import GeneralSettings
+from monitor.services.config_service import ConfigService
 
 
 @pytest.fixture
