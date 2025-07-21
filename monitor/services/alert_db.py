@@ -1,6 +1,7 @@
 """Alert database for persistent storage of alerts"""
 
 import sqlite3
+import os
 from typing import List
 from datetime import datetime
 from monitor.services.alert_models import Alert, AlertType
@@ -8,7 +9,9 @@ from monitor.services.alert_models import Alert, AlertType
 class AlertDatabase:
     """Database for persistent alert storage"""
     
-    def __init__(self, db_file: str = "alerts.db"):
+    def __init__(self, db_file: str = "data/alerts.db"):
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.db_file = db_file
         self._init_database()
     

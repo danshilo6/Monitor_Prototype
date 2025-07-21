@@ -1,12 +1,15 @@
 """Contact database for persistent storage of contacts"""
 
 import sqlite3
+import os
 from typing import List, Tuple
 
 class ContactDatabase:
     """SQLite database for contact storage"""
     
-    def __init__(self, db_file: str = "contacts.db"):
+    def __init__(self, db_file: str = "data/contacts.db"):
+        # Ensure data directory exists
+        os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.db_file = db_file
         self._init_database()
     
