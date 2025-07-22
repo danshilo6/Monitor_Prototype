@@ -45,7 +45,7 @@ def info_banner(app, mock_config):
 class TestInfoBanner:
     """Test cases for InfoBanner widget"""
 
-    @patch('monitor_prototype.services.config_service.ConfigService.get_instance')
+    @patch('monitor.services.config_service.ConfigService.get_instance')
     def test_initialization(self, mock_get_instance, app, mock_config):
         """Test banner initializes correctly"""
         mock_get_instance.return_value = mock_config
@@ -70,7 +70,7 @@ class TestInfoBanner:
         
         banner.deleteLater()
 
-    @patch('monitor_prototype.services.config_service.ConfigService.get_instance')
+    @patch('monitor.services.config_service.ConfigService.get_instance')
     def test_banner_data_display(self, mock_get_instance, app, mock_config):
         """Test that banner displays correct data"""
         mock_get_instance.return_value = mock_config
@@ -93,7 +93,7 @@ class TestInfoBanner:
         
         banner.deleteLater()
 
-    @patch('monitor_prototype.services.config_service.ConfigService.get_instance')
+    @patch('monitor.services.config_service.ConfigService.get_instance')
     def test_default_values_when_config_empty(self, mock_get_instance, app, mock_config):
         """Test banner shows default values when config is empty"""
         mock_get_instance.return_value = mock_config

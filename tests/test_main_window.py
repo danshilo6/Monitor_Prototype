@@ -30,7 +30,7 @@ def mock_config():
 class TestMainWindow:
     """Test cases for MainWindow"""
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_singleton_pattern(self, mock_get_instance, app, mock_config):
         """Test that MainWindow follows singleton pattern"""
         mock_get_instance.return_value = mock_config
@@ -47,7 +47,7 @@ class TestMainWindow:
         MainWindow._instance = None
         window1.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_initialization_components(self, mock_get_instance, app, mock_config):
         """Test that MainWindow initializes all components correctly"""
         mock_get_instance.return_value = mock_config
@@ -65,7 +65,7 @@ class TestMainWindow:
         MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_window_title_and_icon_setup(self, mock_get_instance, app, mock_config):
         """Test window title and icon are set correctly"""
         mock_get_instance.return_value = mock_config
@@ -83,8 +83,8 @@ class TestMainWindow:
         MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
-    @patch('monitor_prototype.gui.main_window.PageFactory.create_page')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.PageFactory.create_page')
     def test_page_navigation(self, mock_create_page, mock_get_instance, app, mock_config):
         """Test page navigation functionality"""
         mock_get_instance.return_value = mock_config
@@ -114,8 +114,8 @@ class TestMainWindow:
         window.deleteLater()
         mock_page.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
-    @patch('monitor_prototype.gui.main_window.PageFactory.create_page')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.PageFactory.create_page')
     def test_same_page_navigation_ignored(self, mock_create_page, mock_get_instance, app, mock_config):
         """Test that navigating to same page doesn't recreate it"""
         mock_get_instance.return_value = mock_config
@@ -140,7 +140,7 @@ class TestMainWindow:
         window.deleteLater()
         initial_page.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_refresh_banner_location_method(self, mock_get_instance, app, mock_config):
         """Test refresh_banner_location method"""
         mock_get_instance.return_value = mock_config
@@ -161,8 +161,8 @@ class TestMainWindow:
         MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
-    @patch('monitor_prototype.gui.main_window.PageFactory.create_page')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.PageFactory.create_page')
     def test_signal_connection_for_settings_page(self, mock_create_page, mock_get_instance, app, mock_config):
         """Test that signals are connected when settings page is created"""
         mock_get_instance.return_value = mock_config
@@ -189,8 +189,8 @@ class TestMainWindow:
         window.deleteLater()
         mock_settings_page.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
-    @patch('monitor_prototype.gui.main_window.PageFactory.create_page')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.PageFactory.create_page')
     def test_signal_connection_only_for_settings(self, mock_create_page, mock_get_instance, app, mock_config):
         """Test that signals are only connected for settings pages"""
         mock_get_instance.return_value = mock_config
@@ -213,8 +213,8 @@ class TestMainWindow:
         window.deleteLater()
         mock_page.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
-    @patch('monitor_prototype.gui.main_window.PageFactory.create_page')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.PageFactory.create_page')
     def test_error_handling_for_unknown_page(self, mock_create_page, mock_get_instance, app, mock_config):
         """Test error handling when page creation fails"""
         mock_get_instance.return_value = mock_config
@@ -235,7 +235,7 @@ class TestMainWindow:
         MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_content_clearing(self, mock_get_instance, app, mock_config):
         """Test that content is cleared before adding new content"""
         mock_get_instance.return_value = mock_config
@@ -267,7 +267,7 @@ class TestMainWindow:
         window.deleteLater()
         test_widget.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_navigation_bar_signal_connection(self, mock_get_instance, app, mock_config):
         """Test that navigation bar signals are connected"""
         mock_get_instance.return_value = mock_config
@@ -290,7 +290,7 @@ class TestMainWindow:
         MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor_prototype.gui.main_window.ConfigService.get_instance')
+    @patch('monitor.gui.main_window.ConfigService.get_instance')
     def test_multiple_get_instance_calls(self, mock_get_instance, app, mock_config):
         """Test multiple calls to get_instance return same object"""
         mock_get_instance.return_value = mock_config

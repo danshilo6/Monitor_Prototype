@@ -165,7 +165,7 @@ class TestSystemSettings:
         # Verify time wasn't changed
         assert system_settings.get_restart_time() == original_time
 
-    @patch('monitor_prototype.gui.pages.settings_sub_pages.system_settings.QMessageBox')
+    @patch('monitor.gui.pages.settings_sub_pages.system_settings.QMessageBox')
     def test_close_ein_tzofia_confirmation(self, mock_message_box, system_settings):
         """Test close Ein Tzofia confirmation dialog"""
         # Mock confirmation dialog to return Yes
@@ -177,7 +177,7 @@ class TestSystemSettings:
         # Verify confirmation dialog was shown
         mock_message_box.question.assert_called_once()
 
-    @patch('monitor_prototype.gui.pages.settings_sub_pages.system_settings.QMessageBox')
+    @patch('monitor.gui.pages.settings_sub_pages.system_settings.QMessageBox')
     def test_close_ein_tzofia_confirmation_cancelled(self, mock_message_box, system_settings):
         """Test close Ein Tzofia when confirmation is cancelled"""
         # Mock confirmation dialog to return Cancel

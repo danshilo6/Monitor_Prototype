@@ -4,6 +4,9 @@ alerts.db
 contacts.db
 data/
 *.db
+# -others
+monitor/
+test_navigation_bar.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

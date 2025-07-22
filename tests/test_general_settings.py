@@ -112,7 +112,7 @@ class TestGeneralSettings:
         """Test that location_changed signal is defined"""
         assert hasattr(general_settings, 'location_changed')
 
-    @patch('monitor_prototype.gui.pages.settings_sub_pages.general_settings.LocationNameDialog')
+    @patch('monitor.gui.pages.settings_sub_pages.general_settings.LocationNameDialog')
     def test_edit_location_name_signal_emission(self, mock_dialog, general_settings, qtbot):
         """Test that location_changed signal is emitted when location is edited"""
         # Mock the dialog to return accepted=True and new name
@@ -132,7 +132,7 @@ class TestGeneralSettings:
         # Verify UI was updated
         assert general_settings.get_location_name() == "Updated Location"
 
-    @patch('monitor_prototype.gui.pages.settings_sub_pages.general_settings.LocationNameDialog')
+    @patch('monitor.gui.pages.settings_sub_pages.general_settings.LocationNameDialog')
     def test_edit_location_name_dialog_cancelled(self, mock_dialog, general_settings):
         """Test that nothing happens when location name dialog is cancelled"""
         # Mock the dialog to return cancelled
@@ -146,7 +146,7 @@ class TestGeneralSettings:
         assert general_settings.get_location_name() == original_name
         general_settings._config.set.assert_not_called()
 
-    @patch('monitor_prototype.gui.pages.settings_sub_pages.general_settings.QFileDialog')
+    @patch('monitor.gui.pages.settings_sub_pages.general_settings.QFileDialog')
     def test_choose_file_dialog(self, mock_file_dialog, general_settings):
         """Test file chooser dialog functionality"""
         # Mock file dialog to return a file path
@@ -167,7 +167,7 @@ class TestGeneralSettings:
         # Verify UI was updated
         assert general_settings.get_monitor_program_path() == "/new/program.exe"
 
-    @patch('monitor_prototype.gui.pages.settings_sub_pages.general_settings.QFileDialog')
+    @patch('monitor.gui.pages.settings_sub_pages.general_settings.QFileDialog')
     def test_choose_file_dialog_cancelled(self, mock_file_dialog, general_settings):
         """Test that nothing happens when file dialog is cancelled"""
         # Mock file dialog to return empty path (cancelled)
