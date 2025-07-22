@@ -5,7 +5,7 @@ contacts.db
 data/
 *.db
 # -others
-monitor/
+monitor_prototype/
 test_navigation_bar.py
 
 # Byte-compiled / optimized / DLL files
