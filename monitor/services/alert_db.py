@@ -5,18 +5,23 @@ import os
 from typing import List
 from datetime import datetime
 from monitor.services.alert_models import Alert, AlertType
+from monitor.log_setup import get_logger
 
 class AlertDatabase:
     """Database for persistent alert storage"""
     
     def __init__(self, db_file: str = "data/alerts.db"):
+        self.logger = get_logger("monitor.services.alert_db")
         # Ensure data directory exists
         os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.db_file = db_file
+        self.logger.info(f"Initializing alert database: {db_file}")
         self._init_database()
+        self.logger.debug("Alert database initialized successfully")
     
     def _init_database(self):
         """Initialize alerts table"""
+        self.logger.debug("Creating alerts table if it doesn't exist")
         with sqlite3.connect(self.db_file) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS alerts (
@@ -38,13 +43,15 @@ class AlertDatabase:
                     VALUES (?, ?, ?, ?, 0)
                 ''', (alert.id, alert.alert_type.value, alert.description, 
                       alert.timestamp.isoformat()))
+            self.logger.info(f"Added alert: {alert.alert_type.value} - {alert.description}")
             return True
         except Exception as e:
-            print(f"Failed to add alert: {e}")
+            self.logger.error(f"Failed to add alert {alert.id}: {e}")
             return False
     
     def get_active_alerts(self) -> List[Alert]:
         """Get all unresolved alerts"""
+        self.logger.debug("Retrieving active alerts from database")
         with sqlite3.connect(self.db_file) as conn:
             rows = conn.execute('''
                 SELECT id, alert_type, description, timestamp
@@ -61,6 +68,7 @@ class AlertDatabase:
                     timestamp=datetime.fromisoformat(row[3])
                 )
                 alerts.append(alert)
+            self.logger.debug(f"Retrieved {len(alerts)} active alerts")
             return alerts
     
     def resolve_alert(self, alert_id: str) -> bool:
@@ -70,13 +78,19 @@ class AlertDatabase:
                 cursor = conn.execute('''
                     UPDATE alerts SET resolved = 1 WHERE id = ?
                 ''', (alert_id,))
-                return cursor.rowcount > 0
+                if cursor.rowcount > 0:
+                    self.logger.info(f"Resolved alert: {alert_id}")
+                    return True
+                else:
+                    self.logger.warning(f"Alert not found for resolution: {alert_id}")
+                    return False
         except Exception as e:
-            print(f"Failed to resolve alert: {e}")
+            self.logger.error(f"Failed to resolve alert {alert_id}: {e}")
             return False
     
     def get_all_alerts(self) -> List[Alert]:
         """Get all alerts (including resolved ones)"""
+        self.logger.debug("Retrieving all alerts (including resolved) from database")
         with sqlite3.connect(self.db_file) as conn:
             rows = conn.execute('''
                 SELECT id, alert_type, description, timestamp
@@ -93,4 +107,5 @@ class AlertDatabase:
                     timestamp=datetime.fromisoformat(row[3])
                 )
                 alerts.append(alert)
+            self.logger.debug(f"Retrieved {len(alerts)} total alerts")
             return alerts

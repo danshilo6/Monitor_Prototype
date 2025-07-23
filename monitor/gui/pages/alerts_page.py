@@ -10,8 +10,8 @@ from monitor.services.alert_db import AlertDatabase
 class AlertsPage(BasePage):
     """Alerts management page with persistent storage"""
 
-    def __init__(self):
-        self.alert_db = AlertDatabase()
+    def __init__(self, alert_db: AlertDatabase):
+        self.alert_db = alert_db  # Injected dependency
         super().__init__()
     
     def setup_ui(self):

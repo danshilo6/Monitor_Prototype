@@ -13,8 +13,8 @@ from monitor.gui.widgets.phone_input_dialog import PhoneInputDialog
 class ContactsPage(BasePage):
     """Contact management page with email and phone lists"""
     
-    def __init__(self):
-        self.contact_db = ContactDatabase()
+    def __init__(self, contact_db: ContactDatabase):
+        self.contact_db = contact_db  # Injected dependency
         super().__init__()
     
     def setup_ui(self):
