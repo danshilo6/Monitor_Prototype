@@ -30,30 +30,9 @@ def mock_config():
 class TestMainWindow:
     """Test cases for MainWindow"""
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_singleton_pattern(self, mock_get_instance, app, mock_config):
-        """Test that MainWindow follows singleton pattern"""
-        mock_get_instance.return_value = mock_config
-        
-        # Reset singleton instance
-        MainWindow._instance = None
-        
-        window1 = MainWindow()
-        window2 = MainWindow.get_instance()
-        
-        assert window1 is window2
-        
-        # Cleanup
-        MainWindow._instance = None
-        window1.deleteLater()
-
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_initialization_components(self, mock_get_instance, app, mock_config):
+    def test_initialization_components(self, app, mock_config):
         """Test that MainWindow initializes all components correctly"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Check that main components exist
         assert hasattr(window, '_info_banner')
@@ -62,16 +41,11 @@ class TestMainWindow:
         assert hasattr(window, '_current_page')
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_window_title_and_icon_setup(self, mock_get_instance, app, mock_config):
+    def test_window_title_and_icon_setup(self, app, mock_config):
         """Test window title and icon are set correctly"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Check window title (adjust expectation to match actual title)
         assert window.windowTitle() == "Monitor"
@@ -80,16 +54,11 @@ class TestMainWindow:
         assert window.windowIcon() is not None
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
     @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_page_navigation(self, mock_create_page, mock_get_instance, app, mock_config):
-        """Test page navigation functionality"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
+    def test_page_navigation(self, mock_create_page, app, mock_config):
+        """Test page navigation functionality"""        
         # Create a proper settings page mock with required methods
         from PySide6.QtWidgets import QWidget
         from unittest.mock import Mock
@@ -100,33 +69,28 @@ class TestMainWindow:
         
         mock_create_page.return_value = mock_page
         
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Test page change
         window._update_content("settings")
         
         # Verify page was created and added
-        mock_create_page.assert_called_with("settings")
+        mock_create_page.assert_called_with("settings", mock_config)
         assert window._current_page == "settings"
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
         mock_page.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
     @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_same_page_navigation_ignored(self, mock_create_page, mock_get_instance, app, mock_config):
+    def test_same_page_navigation_ignored(self, mock_create_page, app, mock_config):
         """Test that navigating to same page doesn't recreate it"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
         # Create initial page
         from PySide6.QtWidgets import QLabel
         initial_page = QLabel("Initial Page")
         mock_create_page.return_value = initial_page
         
-        window = MainWindow()
+        window = MainWindow(mock_config)
         window._current_page = "settings"
         
         # Try to navigate to same page
@@ -136,17 +100,12 @@ class TestMainWindow:
         assert mock_create_page.call_count == 1  # Only called during setup
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
         initial_page.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_refresh_banner_location_method(self, mock_get_instance, app, mock_config):
+    def test_refresh_banner_location_method(self, app, mock_config):
         """Test refresh_banner_location method"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Mock the info banner
         window._info_banner = Mock()
@@ -158,16 +117,11 @@ class TestMainWindow:
         window._info_banner.refresh_location.assert_called_once()
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
     @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_signal_connection_for_settings_page(self, mock_create_page, mock_get_instance, app, mock_config):
+    def test_signal_connection_for_settings_page(self, mock_create_page, app, mock_config):
         """Test that signals are connected when settings page is created"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
         # Mock settings page with general settings
         mock_general_settings = Mock()
         from PySide6.QtWidgets import QLabel
@@ -175,7 +129,7 @@ class TestMainWindow:
         mock_settings_page.get_general_settings = Mock(return_value=mock_general_settings)
         mock_create_page.return_value = mock_settings_page
         
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Navigate to settings page
         window._update_content("settings")
@@ -185,22 +139,17 @@ class TestMainWindow:
         mock_general_settings.location_changed.connect.assert_called_once_with(window.refresh_banner_location)
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
         mock_settings_page.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
     @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_signal_connection_only_for_settings(self, mock_create_page, mock_get_instance, app, mock_config):
+    def test_signal_connection_only_for_settings(self, mock_create_page, app, mock_config):
         """Test that signals are only connected for settings pages"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
         from PySide6.QtWidgets import QLabel
         mock_page = QLabel("Alert Page")
         mock_create_page.return_value = mock_page
         
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Navigate to non-settings page
         window._update_content("alerts")
@@ -209,21 +158,16 @@ class TestMainWindow:
         assert not hasattr(mock_page, 'get_general_settings')
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
         mock_page.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
     @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_error_handling_for_unknown_page(self, mock_create_page, mock_get_instance, app, mock_config):
+    def test_error_handling_for_unknown_page(self, mock_create_page, app, mock_config):
         """Test error handling when page creation fails"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
         # Mock page creation to raise error
         mock_create_page.side_effect = ValueError("Unknown page")
         
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Try to navigate to unknown page
         window._update_content("unknown_page")
@@ -232,13 +176,10 @@ class TestMainWindow:
         assert window._current_page is None  # Page wasn't set due to error
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_content_clearing(self, mock_get_instance, app, mock_config):
+    def test_content_clearing(self, app, mock_config):
         """Test that content is cleared before adding new content"""
-        mock_get_instance.return_value = mock_config
         # Make sure config returns proper values for all settings components
         mock_config.get.side_effect = lambda section, key, default=None: {
             ("general", "location_name"): "Test Location",
@@ -248,9 +189,7 @@ class TestMainWindow:
             ("system", "enable_ein_tzofia"): True
         }.get((section, key), default)
         
-        MainWindow._instance = None
-        
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Add a real widget to content layout
         from PySide6.QtWidgets import QLabel
@@ -263,17 +202,12 @@ class TestMainWindow:
             mock_clear.assert_called_once()
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
         test_widget.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_navigation_bar_signal_connection(self, mock_get_instance, app, mock_config):
+    def test_navigation_bar_signal_connection(self, app, mock_config):
         """Test that navigation bar signals are connected"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
-        
-        window = MainWindow()
+        window = MainWindow(mock_config)
         
         # Mock the navigation bar
         mock_nav_bar = Mock()
@@ -287,22 +221,15 @@ class TestMainWindow:
             mock_nav_bar.page_changed.connect.assert_called_with(mock_handler)
         
         # Cleanup
-        MainWindow._instance = None
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.ConfigService.get_instance')
-    def test_multiple_get_instance_calls(self, mock_get_instance, app, mock_config):
-        """Test multiple calls to get_instance return same object"""
-        mock_get_instance.return_value = mock_config
-        MainWindow._instance = None
+    def test_window_creation_with_config_service(self, app, mock_config):
+        """Test window creation uses ConfigService properly"""
         
-        instance1 = MainWindow.get_instance()
-        instance2 = MainWindow.get_instance()
-        instance3 = MainWindow.get_instance()
+        window = MainWindow(mock_config)
         
-        assert instance1 is instance2 is instance3
+        # Verify ConfigService was used
+        assert window._config_service is mock_config
         
         # Cleanup
-        MainWindow._instance = None
-        if instance1:
-            instance1.deleteLater()
+        window.deleteLater()

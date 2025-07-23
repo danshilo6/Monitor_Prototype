@@ -7,29 +7,11 @@ import threading
 class ConfigService:
     """Thread-safe service for loading and saving application settings to a JSON config file."""
 
-    _instance = None
-    _lock = threading.RLock()  # Re-entrant lock for thread safety
-
-    def __new__(cls, config_path: str = "config.json"):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self, config_path: str = "config.json"):
-        if self._initialized:
-            return
         self._config_path = Path(config_path)
         self._config: Dict[str, Any] = {}
+        self._lock = threading.RLock()  # Re-entrant lock for thread safety
         self._load()
-        self._initialized = True
-
-    @classmethod
-    def get_instance(cls):
-        """Get the singleton instance of ConfigService"""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
 
     def _acquire_lock(self, timeout=5):
         acquired = self._lock.acquire(timeout=timeout)

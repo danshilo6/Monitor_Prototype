@@ -47,22 +47,11 @@ def temp_config_file():
 @pytest.fixture
 def config_service(temp_config_file):
     """Create ConfigService instance for testing"""
-    # Reset singleton instance before each test
-    ConfigService._instance = None
     return ConfigService(temp_config_file)
 
 
 class TestConfigService:
     """Test cases for ConfigService"""
-
-    def test_singleton_pattern(self, temp_config_file):
-        """Test that ConfigService follows singleton pattern"""
-        ConfigService._instance = None
-        
-        service1 = ConfigService(temp_config_file)
-        service2 = ConfigService.get_instance()
-        
-        assert service1 is service2
 
     def test_get_existing_values(self, config_service):
         """Test getting existing configuration values"""
@@ -86,21 +75,16 @@ class TestConfigService:
 
     def test_save_and_load_persistence(self, temp_config_file):
         """Test that changes persist after saving"""
-        ConfigService._instance = None
-        
         # Create service and modify config
         service1 = ConfigService(temp_config_file)
         service1.set("general", "location_name", "Persistent Location")
         
         # Create new service instance and verify persistence
-        ConfigService._instance = None
         service2 = ConfigService(temp_config_file)
         assert service2.get("general", "location_name") == "Persistent Location"
 
     def test_default_config_creation(self):
         """Test that default config is created when file doesn't exist"""
-        ConfigService._instance = None
-        
         with tempfile.NamedTemporaryFile(delete=True) as f:
             non_existent_path = f.name + "_nonexistent"
         
@@ -136,12 +120,19 @@ class TestConfigService:
         finally:
             config_service._lock.release()
 
-    def test_multiple_get_instance_calls(self, temp_config_file):
-        """Test multiple calls to get_instance return same object"""
-        ConfigService._instance = None
+    def test_multiple_instances_independence(self, temp_config_file):
+        """Test multiple ConfigService instances work independently"""
+        instance1 = ConfigService(temp_config_file)
+        instance2 = ConfigService(temp_config_file)
         
-        instance1 = ConfigService.get_instance()
-        instance2 = ConfigService.get_instance()
-        instance3 = ConfigService.get_instance()
+        # They should be different objects
+        assert instance1 is not instance2
         
-        assert instance1 is instance2 is instance3
+        # Changes in one instance are saved and visible to other instances
+        # since they share the same file
+        original_value = instance2.get("general", "location_name")
+        instance1.set("general", "location_name", "Instance1 Location")
+        
+        # Create a new instance to verify the change was persisted
+        instance3 = ConfigService(temp_config_file)
+        assert instance3.get("general", "location_name") == "Instance1 Location"

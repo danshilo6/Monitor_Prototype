@@ -3,6 +3,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QDir, QFile
 from PySide6.QtGui import QIcon
 from monitor.gui.main_window import MainWindow
+from monitor.services.config_service import ConfigService
 from pathlib import Path
 
 
@@ -18,7 +19,11 @@ if __name__ == "__main__":
 
     set_app_icon(app)
 
-    window = MainWindow()
+    # Create ConfigService instance
+    config_service = ConfigService("config.json")
+    
+    # Inject ConfigService into MainWindow
+    window = MainWindow(config_service)
     window.show()
     sys.exit(app.exec())
 

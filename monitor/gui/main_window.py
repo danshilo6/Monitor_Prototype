@@ -18,26 +18,18 @@ _SIDEBAR_WIDTH = 200
 
 class MainWindow(QMainWindow):
     """Main application window with navigation sidebar and content area"""
-    
-    _instance = None  # Singleton instance
 
-    def __init__(self) -> None:
+    def __init__(self, config_service: ConfigService) -> None:
         super().__init__()
-        MainWindow._instance = self  # Store reference for global access
         self._current_page = None
         self._content_area: QWidget
         self._nav_bar: NavigationBar
         self._info_banner: InfoBanner
-        self._config_service = ConfigService.get_instance()  # Use singleton instance
+        self._config_service = config_service  # Injected dependency
         self._setup_window()
         self._setup_ui()
         self._apply_styles()
         self._connect_signals()
-
-    @classmethod
-    def get_instance(cls):
-        """Get the current MainWindow instance"""
-        return cls._instance
 
     # --------------------------------------------------------------------------
     # private setup methods
@@ -179,7 +171,7 @@ class MainWindow(QMainWindow):
         self._clear_content()
         # Create and add new page
         try:
-            page = PageFactory.create_page(page_name)
+            page = PageFactory.create_page(page_name, self._config_service)
             self._content_layout.addWidget(page)
             self._current_page = page_name
             

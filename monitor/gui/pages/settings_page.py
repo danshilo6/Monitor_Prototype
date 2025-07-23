@@ -11,11 +11,11 @@ from monitor.services.config_service import ConfigService
 class SettingsPage(BasePage):
     """Settings page with tabbed sub-pages"""
     
-    def __init__(self):
+    def __init__(self, config_service: ConfigService):
         self._general_settings = None
         self._system_settings = None
         self._devices_settings = None
-        self.config_service = ConfigService.get_instance()  # Use singleton instance
+        self.config_service = config_service  # Injected dependency
         super().__init__()
     
     def setup_ui(self):

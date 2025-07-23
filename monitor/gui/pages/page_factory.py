@@ -4,16 +4,18 @@ from monitor.gui.pages.alerts_page import AlertsPage
 from monitor.gui.pages.contacts_page import ContactsPage
 from monitor.gui.pages.settings_page import SettingsPage
 from monitor.gui.pages.base_page import BasePage
+from monitor.services.config_service import ConfigService
 
 class PageFactory:
     """Factory for creating page instances"""
     
     @staticmethod
-    def create_page(page_name: str) -> BasePage:
+    def create_page(page_name: str, config_service: ConfigService) -> BasePage:
         """Create a page instance based on the page name
         
         Args:
             page_name: Name of the page to create
+            config_service: ConfigService instance to inject
             
         Returns:
             BasePage: Instance of the requested page
@@ -21,15 +23,12 @@ class PageFactory:
         Raises:
             ValueError: If the page name is not recognized
         """
-        pages = {
-            "alerts": AlertsPage,
-            "contacts": ContactsPage,
-            "settings": SettingsPage
-        }
-        
-        page_class = pages.get(page_name)
-        if page_class:
-            return page_class()
+        if page_name == "alerts":
+            return AlertsPage()
+        elif page_name == "contacts":
+            return ContactsPage()
+        elif page_name == "settings":
+            return SettingsPage(config_service)
         else:
             raise ValueError(f"Unknown page: {page_name}")
     
