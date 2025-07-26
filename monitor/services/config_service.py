@@ -15,7 +15,6 @@ class ConfigService:
         self._lock = threading.RLock()  # Re-entrant lock for thread safety
         self.logger.info(f"Initializing config service: {config_path}")
         self._load()
-        self.logger.debug("Config service initialized successfully")
 
     def _acquire_lock(self, timeout=5):
         acquired = self._lock.acquire(timeout=timeout)
@@ -34,7 +33,6 @@ class ConfigService:
                     self.logger.debug(f"Loading config from: {self._config_path}")
                     with open(self._config_path, "r", encoding="utf-8") as f:
                         self._config = json.load(f)
-                    self.logger.debug("Config file loaded successfully")
                 else:
                     self.logger.info("Config file not found, using default configuration")
                     self._config = self._default_config()
@@ -67,7 +65,6 @@ class ConfigService:
         if self._acquire_lock():
             try:
                 value = self._config.get(section, {}).get(key, default)
-                self.logger.debug(f"Retrieved config value: {section}.{key} = {value}")
                 return value
             finally:
                 self._release_lock()

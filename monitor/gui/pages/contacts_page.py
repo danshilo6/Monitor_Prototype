@@ -1,12 +1,15 @@
 """Contacts page for managing contact directory"""
 
 import re
-from PySide6.QtWidgets import (QVBoxLayout, QLabel, QTableWidget, 
+from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QTableView, 
                                QTableWidgetItem, QPushButton, QInputDialog, 
                                QMessageBox, QWidget, QDialog, QHeaderView)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from monitor.gui.pages.base_page import BasePage
+from monitor.gui.models.contact_table_model import ContactTableModel
+from monitor.gui.delegates.button_delegate import IconButtonDelegate
+from monitor.gui.utils.paths import get_icon_path
 from monitor.services.contact_db import ContactDatabase
 from monitor.gui.widgets.phone_input_dialog import PhoneInputDialog
 
@@ -40,28 +43,43 @@ class ContactsPage(BasePage):
         # Load data
         self._load_data()
     
-    def _setup_table_ui(self, table: QTableWidget, column_headers: list):
+    def _setup_table_ui(self, table: QTableView, model: ContactTableModel):
         """Setup common table UI properties"""
         table.setObjectName("contact-table")
-        table.setColumnCount(2)
-        table.setHorizontalHeaderLabels(column_headers)
-        table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        table.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Disable focus on table
+        table.setModel(model)
         
-        # Hide headers and grid lines
-        table.horizontalHeader().setVisible(False)
-        table.verticalHeader().setVisible(False)
+        # Setup icon button delegate for the Action column (column 1)
+        delegate = IconButtonDelegate(
+            target_column=1,
+            normal_icon_path=get_icon_path('trashcan.svg'),
+            hover_icon_path=get_icon_path('trashcan_hover.svg'),
+            icon_size=18,
+            parent=table
+        )
+        table.setItemDelegateForColumn(1, delegate)
+        
+        # Enable mouse tracking for hover effects
+        table.setMouseTracking(True)
+        table.viewport().setMouseTracking(True)
+        
+        # Configure table view
+        table.horizontalHeader().setStretchLastSection(False)
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)          # Contact value column
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)            # Action column
+        table.setColumnWidth(1, 50)   # Fixed width for icon-only action column
+        
+        # Table appearance
+        table.setAlternatingRowColors(True)
         table.setShowGrid(False)
+        table.setSelectionBehavior(QTableView.SelectRows)
+        table.setSelectionMode(QTableView.NoSelection)
+        table.setFocusPolicy(Qt.NoFocus)
         
-        # Configure columns
-        header = table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        table.setColumnWidth(1, 70)  # Wider to show X button properly
-        
-        # Add padding to rows
+        # Row height
         table.verticalHeader().setDefaultSectionSize(40)
+        table.verticalHeader().hide()  # Hide row numbers
+        
+        return delegate  # Return delegate so we can connect its signal
 
     def _create_email_section(self) -> QWidget:
         """Create email table section"""
@@ -69,25 +87,35 @@ class ContactsPage(BasePage):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
-        
-        # Section header
+
+        # Horizontal layout for label (left) and button (right), vertically centered
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+
         header = QLabel("Email Addresses")
         header.setObjectName("section-header")
-        layout.addWidget(header)
-        
-        # Add button
+        header_row.addWidget(header, alignment=Qt.AlignVCenter | Qt.AlignLeft)
+
+        header_row.addStretch(1)
+
         add_btn = QPushButton("Add Email")
         add_btn.setObjectName("add-button")
         add_btn.clicked.connect(self._add_email)
-        layout.addWidget(add_btn)
-        
+        header_row.addWidget(add_btn, alignment=Qt.AlignVCenter | Qt.AlignRight)
+
+        layout.addLayout(header_row)
+
         # Email table
-        self._email_table = QTableWidget()
-        email_table_headers = ["Email Address", "Action"]
-        self._setup_table_ui(self._email_table, email_table_headers)
-        
+        self._email_model = ContactTableModel("email", self)
+        self._email_table = QTableView()
+        self._email_delegate = self._setup_table_ui(self._email_table, self._email_model)
+
+        # Connect delegate signal
+        self._email_delegate.button_clicked.connect(self._on_email_remove_clicked)
+
         layout.addWidget(self._email_table, 1)  # Add stretch factor
-        
+
         return widget
     
     def _create_phone_section(self) -> QWidget:
@@ -96,65 +124,50 @@ class ContactsPage(BasePage):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
-        
-        # Section header
+
+        # Horizontal layout for label (left) and button (right), vertically centered
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_row.setSpacing(8)
+
         header = QLabel("Phone Numbers")
         header.setObjectName("section-header")
-        layout.addWidget(header)
-        
-        # Add button
+        header_row.addWidget(header, alignment=Qt.AlignVCenter | Qt.AlignLeft)
+
+        header_row.addStretch(1)
+
         add_btn = QPushButton("Add Phone")
         add_btn.setObjectName("add-button")
         add_btn.clicked.connect(self._add_phone)
-        layout.addWidget(add_btn)
-        
+        header_row.addWidget(add_btn, alignment=Qt.AlignVCenter | Qt.AlignRight)
+
+        layout.addLayout(header_row)
+
         # Phone table
-        self._phone_table = QTableWidget()
-        phone_table_headers = ["Phone Number", "Action"]
-        self._setup_table_ui(self._phone_table, phone_table_headers)
-        
+        self._phone_model = ContactTableModel("phone", self)
+        self._phone_table = QTableView()
+        self._phone_delegate = self._setup_table_ui(self._phone_table, self._phone_model)
+
+        # Connect delegate signal
+        self._phone_delegate.button_clicked.connect(self._on_phone_remove_clicked)
+
         layout.addWidget(self._phone_table, 1)  # Add stretch factor
-        
+
         return widget
     
     def _load_data(self):
         """Load emails and phones from database"""
-        self._email_table.setRowCount(0)
-        self._phone_table.setRowCount(0)
+        # Clear hover states before updating data to prevent stale hover references
+        self._email_delegate.clear_hover()
+        self._phone_delegate.clear_hover()
         
         # Load emails
         emails = self.contact_db.get_emails()
-        self._email_table.setRowCount(len(emails))
-        
-        for row, (email_id, email) in enumerate(emails):
-            # Email text
-            email_item = QTableWidgetItem(email)
-            email_item.setData(Qt.ItemDataRole.UserRole, email_id)
-            email_item.setFlags(email_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._email_table.setItem(row, 0, email_item)
-            
-            # Delete button
-            delete_btn = QPushButton("X")
-            delete_btn.setObjectName("remove-button")
-            delete_btn.clicked.connect(lambda checked, eid=email_id: self._delete_email(eid))
-            self._email_table.setCellWidget(row, 1, delete_btn)
+        self._email_model.set_contacts(emails)
         
         # Load phones
         phones = self.contact_db.get_phones()
-        self._phone_table.setRowCount(len(phones))
-        
-        for row, (phone_id, phone) in enumerate(phones):
-            # Phone text
-            phone_item = QTableWidgetItem(phone)
-            phone_item.setData(Qt.ItemDataRole.UserRole, phone_id)
-            phone_item.setFlags(phone_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self._phone_table.setItem(row, 0, phone_item)
-            
-            # Delete button
-            delete_btn = QPushButton("X")
-            delete_btn.setObjectName("remove-button")
-            delete_btn.clicked.connect(lambda checked, pid=phone_id: self._delete_phone(pid))
-            self._phone_table.setCellWidget(row, 1, delete_btn)
+        self._phone_model.set_contacts(phones)
     
     def _add_email(self):
         """Add new email via dialog"""
@@ -176,7 +189,7 @@ class ContactsPage(BasePage):
                 
                 # Try to add to database
                 if self.contact_db.add_email(email):
-                    self._load_data()
+                    self._load_data()  # Reload to get the new email with ID
                 else:
                     QMessageBox.warning(self, "Error", "Email already exists")
     
@@ -199,21 +212,35 @@ class ContactsPage(BasePage):
             
             # Try to add to database
             if self.contact_db.add_phone(phone):
-                self._load_data()
+                self._load_data()  # Reload to get the new phone with ID
             else:
                 QMessageBox.warning(self, "Error", "Phone number already exists")
+    
+    def _on_email_remove_clicked(self, row_index: int):
+        """Handle email remove button click"""
+        contact = self._email_model.get_contact_at_row(row_index)
+        if contact:
+            email_id, email_value = contact
+            self._delete_email(email_id)
+    
+    def _on_phone_remove_clicked(self, row_index: int):
+        """Handle phone remove button click"""
+        contact = self._phone_model.get_contact_at_row(row_index)
+        if contact:
+            phone_id, phone_value = contact
+            self._delete_phone(phone_id)
     
     def _delete_email(self, email_id: int):
         """Delete email from database and refresh UI"""
         if self.contact_db.remove_email(email_id):
-            self._load_data()
+            self._load_data()  # Reload to reflect the deletion
         else:
             QMessageBox.warning(self, "Error", "Failed to delete email")
     
     def _delete_phone(self, phone_id: int):
         """Delete phone from database and refresh UI"""
         if self.contact_db.remove_phone(phone_id):
-            self._load_data()
+            self._load_data()  # Reload to reflect the deletion
         else:
             QMessageBox.warning(self, "Error", "Failed to delete phone")
     

@@ -113,22 +113,32 @@ def _file_handler(
     path: Path,
     level: int,
     when: str = "midnight",
-    backups: int = 14,
+    backups: int = 7,
 ) -> logging.handlers.TimedRotatingFileHandler:
     """
-    Create a rotating file handler with UTF-8 encoding.
+    Create a rotating file handler with UTF-8 encoding and date in filename.
     
     Args:
-        path: File path for the log file
+        path: Base file path (e.g., "logs/app.log")
         level: Minimum log level for this handler (e.g., logging.INFO)
         when: When to rotate - "midnight" rotates daily at 00:00
-        backups: Number of backup files to keep (14 = 2 weeks of daily logs)
+        backups: Number of backup files to keep (7 = 1 week of daily logs)
         
     Returns:
-        Configured TimedRotatingFileHandler
+        Configured TimedRotatingFileHandler with dated filename
     """
+    from datetime import datetime
+    
+    # Add today's date to filename immediately
+    today = datetime.now().strftime("%Y-%m-%d")
+    base_name = path.stem  # e.g., "app" from "app.log"
+    extension = path.suffix  # e.g., ".log"
+    dated_filename = f"{base_name}-{today}{extension}"  # e.g., "app-2025-07-26.log"
+    
+    dated_path = path.parent / dated_filename
+    
     h = logging.handlers.TimedRotatingFileHandler(
-        str(path),
+        str(dated_path),
         when=when,
         backupCount=backups,
         encoding="utf-8",  # Ensure proper Unicode handling
@@ -136,6 +146,10 @@ def _file_handler(
     )
     h.setLevel(level)
     h.setFormatter(_formatter())
+    
+    # Set suffix for rotated files to avoid double-dating
+    h.suffix = ".%H%M%S"  # Time-based suffix for multiple rotations in same day
+    
     return h
 
 

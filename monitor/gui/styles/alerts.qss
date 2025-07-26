@@ -17,41 +17,60 @@ AlertsList {
     padding: 0px;
 }
 
-/* QTableWidget Styles */
-AlertsList QTableWidget {
+/* QTableWidget and QTableView Styles */
+AlertsList QTableWidget, QTableView#alertsTable {
     background-color: #ffffff;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
     gridline-color: #f0f0f0;
+    selection-background-color: transparent;
+    alternate-background-color: #f8f9fa;
 }
 
-AlertsList QTableWidget::item {
-    padding: 8px;
+AlertsList QTableWidget::item, QTableView#alertsTable::item {
+    padding: 12px 8px;
+    border: none;
     border-bottom: 1px solid #f0f0f0;
-    text-align: center;
+}
+
+/* Icon sizing for the type column */
+QTableView#alertsTable::item:first-child {
+    padding: 8px;
+}
+
+QTableView#alertsTable QAbstractItemView::item {
+    icon-size: 20px 20px;
 }
 
 /* Remove selection highlighting */
-AlertsList QTableWidget::item:selected {
+AlertsList QTableWidget::item:selected, QTableView#alertsTable::item:selected {
     background-color: transparent;
+    color: #2d3142;
 }
 
-AlertsList QTableWidget::item:focus {
+AlertsList QTableWidget::item:focus, QTableView#alertsTable::item:focus {
     background-color: transparent;
     outline: none;
 }
 
-AlertsList QHeaderView::section {
+/* Header styling */
+
+AlertsList QHeaderView::section, QTableView#alertsTable QHeaderView::section {
     background-color: #f8f9fa;
-    padding: 8px;
+    padding: 4px 8px;
     border: none;
     border-bottom: 2px solid #e0e0e0;
     font-weight: bold;
     color: #2d3142;
-    text-align: center;
+    font-size: 14px;
 }
 
-AlertsList QScrollArea {
+
+AlertsList QHeaderView::section:last, QTableView#alertsTable QHeaderView::section:last {
+    /* No right border needed, already removed above */
+}
+
+AlertsList QScrollArea, QTableView#alertsTable QScrollArea {
     border: none;
     background-color: transparent;
 }
@@ -60,44 +79,48 @@ AlertsList QScrollArea > QWidget > QWidget {
     background-color: #ffffff;
 }
 
-AlertsList QScrollBar:vertical {
+AlertsList QScrollBar:vertical, QTableView#alertsTable QScrollBar:vertical {
     background-color: #f5f5f5;
     width: 8px;
     border-radius: 4px;
 }
 
-AlertsList QScrollBar::handle:vertical {
+AlertsList QScrollBar::handle:vertical, QTableView#alertsTable QScrollBar::handle:vertical {
     background-color: #c0c0c0;
     border-radius: 4px;
     min-height: 20px;
 }
 
-AlertsList QScrollBar::handle:vertical:hover {
+AlertsList QScrollBar::handle:vertical:hover, QTableView#alertsTable QScrollBar::handle:vertical:hover {
     background-color: #a0a0a0;
 }
 
-AlertsList QScrollBar::add-line:vertical,
-AlertsList QScrollBar::sub-line:vertical {
+AlertsList QScrollBar::add-line:vertical, QTableView#alertsTable QScrollBar::add-line:vertical,
+AlertsList QScrollBar::sub-line:vertical, QTableView#alertsTable QScrollBar::sub-line:vertical {
     height: 0px;
 }
 
-/* Remove Button Styles for Table */
-AlertsList QPushButton {
-    background-color: #dc3545;
-    color: white;
+/* Icon-based Remove Button for Table */
+
+QPushButton#removeTableBtn {
     border: none;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
-    min-width: 12px;
-    max-width: 20px;
+    background: transparent;
+    qproperty-icon: url("monitor/gui/icons/trashcan.svg");
+    qproperty-iconSize: 18px 18px;
 }
 
-AlertsList QPushButton:hover {
-    background-color: #c82333;
+QPushButton#removeTableBtn:hover {
+    background: transparent;
+    border: none;
+    qproperty-icon: url("monitor/gui/icons/trashcan_hover.svg");
 }
 
-AlertsList QPushButton:pressed {
-    background-color: #bd2130;
+QPushButton#removeTableBtn:pressed {
+    background: transparent;
+    border: none;
+}
+
+QPushButton#removeTableBtn:focus {
+    outline: none;
+    border: none;
 }

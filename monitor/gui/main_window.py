@@ -4,7 +4,9 @@ from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QVBoxLa
 from PySide6.QtCore import Qt
 from monitor.gui.widgets.navigation_bar import NavigationBar
 from monitor.gui.widgets.info_banner import InfoBanner
-from monitor.gui.pages.page_factory import PageFactory
+from monitor.gui.pages.alerts_page import AlertsPage
+from monitor.gui.pages.contacts_page import ContactsPage
+from monitor.gui.pages.settings_page import SettingsPage
 from monitor.gui.styles import style_manager
 from monitor.services.config_service import ConfigService
 from monitor.services.alert_db import AlertDatabase
@@ -66,7 +68,6 @@ class MainWindow(QMainWindow):
 
     def _setup_ui(self) -> None:
         """Initialize and layout all UI components"""
-        self.logger.debug("Setting up UI components")
         
         # ---- main layout (vertical to stack banner on top) --------------------
         main_widget = QWidget()
@@ -79,7 +80,6 @@ class MainWindow(QMainWindow):
         try:
             self._info_banner = InfoBanner(self._config_service)
             main_layout.addWidget(self._info_banner)
-            self.logger.debug("Info banner created and added")
         except Exception as e:
             self.logger.error("Failed to create info banner", exc_info=True)
             raise
@@ -94,7 +94,6 @@ class MainWindow(QMainWindow):
             self._nav_bar = NavigationBar()
             self._nav_bar.setFixedWidth(_SIDEBAR_WIDTH)
             content_layout.addWidget(self._nav_bar)
-            self.logger.debug(f"Navigation bar created with width: {_SIDEBAR_WIDTH}px")
         except Exception as e:
             self.logger.error("Failed to create navigation bar", exc_info=True)
             raise
@@ -116,7 +115,6 @@ class MainWindow(QMainWindow):
 
     def _apply_styles(self) -> None:
         """Apply all stylesheets to the application"""
-        self.logger.debug("Applying stylesheets")
         try:
             # Load and combine all required styles
             combined_styles = style_manager.get_combined_styles(
@@ -130,7 +128,6 @@ class MainWindow(QMainWindow):
             
             # Apply to the main window
             self.setStyleSheet(combined_styles)
-            self.logger.debug("Stylesheets applied successfully")
             
         except FileNotFoundError as e:
             self.logger.warning(f"Could not load styles: {e}, using fallback styles")
@@ -141,7 +138,6 @@ class MainWindow(QMainWindow):
 
     def _apply_fallback_styles(self) -> None:
         """Fallback styles if external files can't be loaded"""
-        self.logger.debug("Applying fallback styles")
         fallback_style = """
         QMainWindow { 
             background-color: #ffffff; 
@@ -178,10 +174,8 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         """Connect navigation signals to handlers"""
-        self.logger.debug("Connecting signal handlers")
         try:
             self._nav_bar.page_changed.connect(self._on_page_changed)
-            self.logger.debug("Navigation signals connected successfully")
         except Exception as e:
             self.logger.error("Failed to connect signals", exc_info=True)
             raise
@@ -194,7 +188,6 @@ class MainWindow(QMainWindow):
         """Handle navigation page change"""
         try:
             self._update_content(page_name)
-            self.logger.debug(f"Page change to '{page_name}' completed successfully")
         except Exception as e:
             self.logger.error(f"Failed to change to page '{page_name}'", exc_info=True)
 
@@ -204,19 +197,14 @@ class MainWindow(QMainWindow):
 
     def _clear_content(self) -> None:
         """Clears all existing content area"""
-        self.logger.debug("Clearing content area")
-        widgets_cleared = 0
         for i in reversed(range(self._content_layout.count())):
             child = self._content_layout.itemAt(i).widget()
             if child:
                 child.setParent(None)
-                widgets_cleared += 1
-        self.logger.debug(f"Cleared {widgets_cleared} widgets from content area")
 
     def _update_content(self, page_name: str) -> None:
         """Update content area based on selected page"""
         if self._current_page == page_name:
-            self.logger.debug(f"Page '{page_name}' already active, skipping update")
             return
             
         self.logger.debug(f"Updating content to page: {page_name}")
@@ -224,11 +212,11 @@ class MainWindow(QMainWindow):
         
         # Create and add new page
         try:
-            page = PageFactory.create_page(page_name, self._config_service, self._alert_db, self._contact_db)
+            page = self._create_page(page_name)
             self._content_layout.addWidget(page)
             self._current_page = page_name
             
-            # Connect signals if it's a settings page
+            # Connect signals based on page type
             self._connect_page_signals(page_name, page)
             self.logger.debug(f"Successfully loaded page: {page_name}")
             
@@ -243,12 +231,45 @@ class MainWindow(QMainWindow):
             error_widget = self._create_error_widget(page_name)
             self._content_layout.addWidget(error_widget)
     
+    def _create_page(self, page_name: str):
+        """Create a page instance based on its specific requirements
+        
+        Args:
+            page_name: Name of the page to create
+            
+        Returns:
+            BasePage: Instance of the requested page
+            
+        Raises:
+            ValueError: If the page name is not recognized
+        """
+        self.logger.debug(f"Creating page with specific requirements: {page_name}")
+        
+        if page_name == "alerts":
+            # Alerts page uses signals and Model/View pattern
+            return AlertsPage()
+        elif page_name == "contacts":
+            # Contacts page uses Model/View with dependency injection
+            return ContactsPage(self._contact_db)
+        elif page_name == "settings":
+            # Settings page uses dependency injection
+            return SettingsPage(self._config_service)
+        else:
+            raise ValueError(f"Unknown page: {page_name}")
+    
     def _connect_page_signals(self, page_name: str, page):
-        """Connect signals from pages to main window"""
+        """Connect signals from pages to their respective services"""
         self.logger.debug(f"Connecting signals for page: {page_name}")
         try:
-            if page_name == "settings":
-                # Connect the location changed signal from general settings
+            if page_name == "alerts":
+                # Connect alerts page to alert database via signals (Model/View + Signals)
+                page.connect_external_signals(self._alert_db)
+                self.logger.debug("Alerts page signals connected successfully")
+            elif page_name == "contacts":
+                # Contacts page uses Model/View with DI - no additional signals needed
+                self.logger.debug("Contacts page uses dependency injection - no external signals to connect")
+            elif page_name == "settings":
+                # Connect settings page signals for configuration updates (DI)
                 general_settings = page.get_general_settings()
                 if general_settings:
                     general_settings.location_changed.connect(self.refresh_banner_location)

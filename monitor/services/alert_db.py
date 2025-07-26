@@ -4,24 +4,29 @@ import sqlite3
 import os
 from typing import List
 from datetime import datetime
+from PySide6.QtCore import QObject, Signal
 from monitor.services.alert_models import Alert, AlertType
 from monitor.log_setup import get_logger
 
-class AlertDatabase:
+class AlertDatabase(QObject):
     """Database for persistent alert storage"""
     
+    # Signals for real-time updates
+    alert_added = Signal(Alert)
+    alert_resolved = Signal(str)  # alert_id
+    alerts_loaded = Signal(list)  # List[Alert]
+    
     def __init__(self, db_file: str = "data/alerts.db"):
+        super().__init__()
         self.logger = get_logger("monitor.services.alert_db")
         # Ensure data directory exists
         os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.db_file = db_file
         self.logger.info(f"Initializing alert database: {db_file}")
         self._init_database()
-        self.logger.debug("Alert database initialized successfully")
     
     def _init_database(self):
         """Initialize alerts table"""
-        self.logger.debug("Creating alerts table if it doesn't exist")
         with sqlite3.connect(self.db_file) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS alerts (
@@ -44,6 +49,7 @@ class AlertDatabase:
                 ''', (alert.id, alert.alert_type.value, alert.description, 
                       alert.timestamp.isoformat()))
             self.logger.info(f"Added alert: {alert.alert_type.value} - {alert.description}")
+            self.alert_added.emit(alert)  # Emit signal
             return True
         except Exception as e:
             self.logger.error(f"Failed to add alert {alert.id}: {e}")
@@ -51,7 +57,6 @@ class AlertDatabase:
     
     def get_active_alerts(self) -> List[Alert]:
         """Get all unresolved alerts"""
-        self.logger.debug("Retrieving active alerts from database")
         with sqlite3.connect(self.db_file) as conn:
             rows = conn.execute('''
                 SELECT id, alert_type, description, timestamp
@@ -68,8 +73,22 @@ class AlertDatabase:
                     timestamp=datetime.fromisoformat(row[3])
                 )
                 alerts.append(alert)
-            self.logger.debug(f"Retrieved {len(alerts)} active alerts")
+            self.alerts_loaded.emit(alerts)  # Emit signal
             return alerts
+    
+    def load_alerts(self):
+        """Load active alerts and emit signal (signal-based interface)"""
+        alerts = self.get_active_alerts()
+        
+        # Generate dummy data if needed (remove later)
+        if not alerts:
+            from monitor.services.alert_models import generate_dummy_alerts
+            self.logger.info("No alerts found, generating dummy data")
+            dummy_alerts = generate_dummy_alerts()
+            for alert in dummy_alerts:
+                self.add_alert(alert)
+            # Get the alerts again after adding dummy data
+            self.get_active_alerts()
     
     def resolve_alert(self, alert_id: str) -> bool:
         """Mark alert as resolved"""
@@ -80,6 +99,7 @@ class AlertDatabase:
                 ''', (alert_id,))
                 if cursor.rowcount > 0:
                     self.logger.info(f"Resolved alert: {alert_id}")
+                    self.alert_resolved.emit(alert_id)  # Emit signal
                     return True
                 else:
                     self.logger.warning(f"Alert not found for resolution: {alert_id}")
@@ -90,7 +110,6 @@ class AlertDatabase:
     
     def get_all_alerts(self) -> List[Alert]:
         """Get all alerts (including resolved ones)"""
-        self.logger.debug("Retrieving all alerts (including resolved) from database")
         with sqlite3.connect(self.db_file) as conn:
             rows = conn.execute('''
                 SELECT id, alert_type, description, timestamp
@@ -107,5 +126,4 @@ class AlertDatabase:
                     timestamp=datetime.fromisoformat(row[3])
                 )
                 alerts.append(alert)
-            self.logger.debug(f"Retrieved {len(alerts)} total alerts")
             return alerts

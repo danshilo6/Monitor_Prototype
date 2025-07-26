@@ -56,52 +56,70 @@ class TestMainWindow:
         # Cleanup
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_page_navigation(self, mock_create_page, app, mock_config):
+    @patch('monitor.gui.main_window.AlertsPage')
+    @patch('monitor.gui.main_window.ContactsPage')
+    @patch('monitor.gui.main_window.SettingsPage')
+    def test_page_navigation(self, mock_settings_page, mock_contacts_page, mock_alerts_page, app, mock_config):
         """Test page navigation functionality"""        
-        # Create a proper settings page mock with required methods
+        # Create mock pages
         from PySide6.QtWidgets import QWidget
-        from unittest.mock import Mock
         
-        mock_page = QWidget()
-        mock_general_settings = Mock()
-        mock_page.get_general_settings = Mock(return_value=mock_general_settings)
+        mock_alerts_widget = QWidget()
+        mock_contacts_widget = QWidget()  
+        mock_settings_widget = QWidget()
         
-        mock_create_page.return_value = mock_page
+        mock_alerts_page.return_value = mock_alerts_widget
+        mock_contacts_page.return_value = mock_contacts_widget
+        mock_settings_page.return_value = mock_settings_widget
+        
+        # Add required methods to settings page
+        mock_settings_widget.get_general_settings = Mock(return_value=Mock())
         
         window = MainWindow(mock_config)
         
-        # Test page change
+        # Test page change to settings
         window._update_content("settings")
         
-        # Verify page was created and added
-        mock_create_page.assert_called_with("settings", mock_config)
+        # Verify settings page was created
+        mock_settings_page.assert_called_once_with(mock_config)
         assert window._current_page == "settings"
         
+        # Test page change to contacts
+        window._update_content("contacts")
+        
+        # Verify contacts page was created  
+        mock_contacts_page.assert_called_once()
+        assert window._current_page == "contacts"
+        
         # Cleanup
         window.deleteLater()
-        mock_page.deleteLater()
 
-    @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_same_page_navigation_ignored(self, mock_create_page, app, mock_config):
+    @patch('monitor.gui.main_window.AlertsPage')
+    @patch('monitor.gui.main_window.ContactsPage')  
+    @patch('monitor.gui.main_window.SettingsPage')
+    def test_same_page_navigation_ignored(self, mock_settings_page, mock_contacts_page, mock_alerts_page, app, mock_config):
         """Test that navigating to same page doesn't recreate it"""
-        # Create initial page
-        from PySide6.QtWidgets import QLabel
-        initial_page = QLabel("Initial Page")
-        mock_create_page.return_value = initial_page
+        # Create mock pages
+        from PySide6.QtWidgets import QWidget
+        
+        mock_alerts_widget = QWidget()
+        mock_alerts_page.return_value = mock_alerts_widget
         
         window = MainWindow(mock_config)
-        window._current_page = "settings"
+        
+        # Navigate to alerts (should be created)
+        window._update_content("alerts")
+        initial_call_count = mock_alerts_page.call_count
         
         # Try to navigate to same page
-        window._update_content("settings")
+        window._update_content("alerts")
         
-        # Verify page was not created again (should only have been called during __init__)
-        assert mock_create_page.call_count == 1  # Only called during setup
+        # Verify page was not created again
+        assert mock_alerts_page.call_count == initial_call_count
+        assert window._current_page == "alerts"
         
         # Cleanup
         window.deleteLater()
-        initial_page.deleteLater()
 
     def test_refresh_banner_location_method(self, app, mock_config):
         """Test refresh_banner_location method"""
@@ -119,61 +137,63 @@ class TestMainWindow:
         # Cleanup
         window.deleteLater()
 
-    @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_signal_connection_for_settings_page(self, mock_create_page, app, mock_config):
+    @patch('monitor.gui.main_window.SettingsPage')
+    def test_signal_connection_for_settings_page(self, mock_settings_page, app, mock_config):
         """Test that signals are connected when settings page is created"""
         # Mock settings page with general settings
         mock_general_settings = Mock()
-        from PySide6.QtWidgets import QLabel
-        mock_settings_page = QLabel("Settings Page")
-        mock_settings_page.get_general_settings = Mock(return_value=mock_general_settings)
-        mock_create_page.return_value = mock_settings_page
+        from PySide6.QtWidgets import QWidget
+        mock_settings_widget = QWidget()
+        mock_settings_widget.get_general_settings = Mock(return_value=mock_general_settings)
+        mock_settings_page.return_value = mock_settings_widget
         
         window = MainWindow(mock_config)
         
         # Navigate to settings page
         window._update_content("settings")
         
+        # Verify page was created with config service
+        mock_settings_page.assert_called_once_with(mock_config)
+        
         # Verify signal connection was attempted
-        mock_settings_page.get_general_settings.assert_called_once()
+        mock_settings_widget.get_general_settings.assert_called_once()
         mock_general_settings.location_changed.connect.assert_called_once_with(window.refresh_banner_location)
         
         # Cleanup
         window.deleteLater()
-        mock_settings_page.deleteLater()
 
-    @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_signal_connection_only_for_settings(self, mock_create_page, app, mock_config):
+    @patch('monitor.gui.main_window.AlertsPage')
+    def test_signal_connection_only_for_settings(self, mock_alerts_page, app, mock_config):
         """Test that signals are only connected for settings pages"""
-        from PySide6.QtWidgets import QLabel
-        mock_page = QLabel("Alert Page")
-        mock_create_page.return_value = mock_page
+        from PySide6.QtWidgets import QWidget
+        mock_alerts_widget = QWidget()
+        mock_alerts_page.return_value = mock_alerts_widget
         
         window = MainWindow(mock_config)
         
         # Navigate to non-settings page
         window._update_content("alerts")
         
-        # Verify no signal connection attempts were made (no get_general_settings method)
-        assert not hasattr(mock_page, 'get_general_settings')
+        # Verify alerts page was created but no signal connection attempts were made for settings
+        mock_alerts_page.assert_called_once()
+        assert not hasattr(mock_alerts_widget, 'get_general_settings')
         
         # Cleanup
         window.deleteLater()
-        mock_page.deleteLater()
 
-    @patch('monitor.gui.main_window.PageFactory.create_page')
-    def test_error_handling_for_unknown_page(self, mock_create_page, app, mock_config):
+    def test_error_handling_for_unknown_page(self, app, mock_config):
         """Test error handling when page creation fails"""
-        # Mock page creation to raise error
-        mock_create_page.side_effect = ValueError("Unknown page")
-        
         window = MainWindow(mock_config)
+        
+        # Record initial state (should be "alerts" from initialization)
+        initial_page = window._current_page
         
         # Try to navigate to unknown page
         window._update_content("unknown_page")
         
-        # Should create error widget instead
-        assert window._current_page is None  # Page wasn't set due to error
+        # Current page should remain unchanged when there's an error
+        # (error widget is displayed but current_page is not updated)
+        assert window._current_page == initial_page
         
         # Cleanup
         window.deleteLater()

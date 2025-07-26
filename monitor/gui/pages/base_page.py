@@ -8,10 +8,15 @@ class BasePage(QWidget):
     def __init__(self):
         super().__init__()
         self.setup_ui()
+        self.connect_signals()
     
     def setup_ui(self):
         """Setup the page's UI components - override in subclasses"""
         raise NotImplementedError("Subclasses must implement setup_ui()")
+    
+    def connect_signals(self):
+        """Connect to service signals - override in subclasses"""
+        pass
     
     def get_title(self) -> str:
         """Return the page title - override in subclasses"""

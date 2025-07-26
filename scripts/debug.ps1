@@ -19,6 +19,18 @@ Write-Host "Starting Monitor application in DEBUG mode..." -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop" -ForegroundColor Gray
 Write-Host ""
 
+# Activate virtual environment if not already active
+if (-not $env:VIRTUAL_ENV) {
+    $venvPath = ".\venv\Scripts\Activate.ps1"
+    if (Test-Path $venvPath) {
+        Write-Host "Activating virtual environment..." -ForegroundColor Cyan
+        & $venvPath
+    } else {
+        Write-Host "Virtual environment not found at $venvPath" -ForegroundColor Red
+        exit 1
+    }
+}
+
 # Run the application
 python -m monitor.gui.app
 

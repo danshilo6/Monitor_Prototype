@@ -1,4 +1,4 @@
-"""Contact database for persistent storage of contacts"""
+"""Contact database service for persistent storage of contacts"""
 
 import sqlite3
 import os
@@ -15,11 +15,9 @@ class ContactDatabase:
         self.db_file = db_file
         self.logger.info(f"Initializing contact database: {db_file}")
         self._init_database()
-        self.logger.debug("Contact database initialized successfully")
     
     def _init_database(self):
-        """Initialize database tables"""
-        self.logger.debug("Creating database tables if they don't exist")
+        """Initialize contacts tables"""
         with sqlite3.connect(self.db_file) as conn:
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS emails (
@@ -64,18 +62,14 @@ class ContactDatabase:
     
     def get_emails(self) -> List[Tuple[int, str]]:
         """Get all emails (id, email)"""
-        self.logger.debug("Retrieving all emails from database")
         with sqlite3.connect(self.db_file) as conn:
             results = conn.execute("SELECT id, email FROM emails ORDER BY email").fetchall()
-            self.logger.debug(f"Retrieved {len(results)} emails")
             return results
     
     def get_phones(self) -> List[Tuple[int, str]]:
         """Get all phones (id, phone)"""
-        self.logger.debug("Retrieving all phones from database")
         with sqlite3.connect(self.db_file) as conn:
             results = conn.execute("SELECT id, phone FROM phones ORDER BY phone").fetchall()
-            self.logger.debug(f"Retrieved {len(results)} phones")
             return results
     
     def remove_email(self, email_id: int) -> bool:

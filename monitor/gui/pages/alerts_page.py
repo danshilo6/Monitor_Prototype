@@ -1,76 +1,118 @@
 """Alerts page for displaying and managing system alerts"""
 
-from PySide6.QtWidgets import QVBoxLayout, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QVBoxLayout, QLabel, QTableView, QHeaderView, QAbstractItemView
+from PySide6.QtCore import Qt, Signal
 from monitor.gui.pages.base_page import BasePage
-from monitor.gui.widgets.alerts_list import AlertsList
-from monitor.services.alert_models import generate_dummy_alerts
-from monitor.services.alert_db import AlertDatabase
+from monitor.gui.models.alert_table_model import AlertTableModel
+from monitor.gui.delegates.button_delegate import IconButtonDelegate
+from monitor.gui.utils.paths import get_icon_path
+from monitor.services.alert_models import Alert
+from typing import List
 
 class AlertsPage(BasePage):
-    """Alerts management page with persistent storage"""
+    """Alerts management page with Model/View pattern"""
+    
+    # Signals for communicating with external components
+    alert_removal_requested = Signal(str)  # Emits alert_id when removal is requested
+    initial_load_requested = Signal()      # Emits when page needs initial data load
 
-    def __init__(self, alert_db: AlertDatabase):
-        self.alert_db = alert_db  # Injected dependency
+    def __init__(self):
         super().__init__()
     
     def setup_ui(self):
         """Setup the alerts page UI"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(16, 16, 16, 16)
 
         # Add header
         header = QLabel("Alerts List")
         header.setObjectName("page-header")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Changed to center
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(header)
         
-        # Create alerts list widget
-        self._alerts_list = AlertsList()
-        self._alerts_list.set_alert_database(self.alert_db)  # Connect database
-        layout.addWidget(self._alerts_list)
+        # Create model and view
+        self.alert_model = AlertTableModel(self)
+        self.alert_view = QTableView(self)
+        self.alert_view.setObjectName("alertsTable")  # For CSS styling
+        self.alert_view.setModel(self.alert_model)
         
-        # Load alerts from database
-        self._load_alerts()
+        # Setup button delegate for the Action column
+        self.button_delegate = IconButtonDelegate(
+            target_column=3,
+            normal_icon_path=get_icon_path('trashcan.svg'),
+            hover_icon_path=get_icon_path('trashcan_hover.svg'),
+            icon_size=18,
+            parent=self
+        )
+        self.alert_view.setItemDelegateForColumn(3, self.button_delegate)
+        
+        # Enable mouse tracking for hover effects
+        self.alert_view.setMouseTracking(True)
+        self.alert_view.viewport().setMouseTracking(True)
+        
+        # Connect mouse leave event to clear hover state
+        self.alert_view.leaveEvent = self._on_table_leave
+        
+        # Configure table view
+        self.alert_view.horizontalHeader().setStretchLastSection(False)
+        self.alert_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)           # Type (icon + text)
+        self.alert_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)          # Description
+        self.alert_view.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Timestamp
+        self.alert_view.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)            # Action
+        self.alert_view.setColumnWidth(0, 120)  # Fixed width for type column (icon + text)
+        self.alert_view.setColumnWidth(3, 50)   # Exact width for icon-only action column
+        
+        # Table appearance
+        self.alert_view.setAlternatingRowColors(True)
+        self.alert_view.setShowGrid(False)  # Turn off grid for cleaner look
+        self.alert_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.alert_view.setSelectionMode(QAbstractItemView.NoSelection)
+        self.alert_view.setFocusPolicy(Qt.NoFocus)
+        
+        # Row height
+        self.alert_view.verticalHeader().setDefaultSectionSize(45)
+        self.alert_view.verticalHeader().hide()  # Hide row numbers
+        
+        layout.addWidget(self.alert_view)
+        
+        # Connect button delegate to removal action
+        self.button_delegate.button_clicked.connect(self._on_remove_button_clicked)
     
-    def _load_alerts(self):
-        """Load alerts from database"""
-        # Load existing alerts from database
-        saved_alerts = self.alert_db.get_active_alerts()
+    def connect_external_signals(self, alert_db):
+        """Connect to external database signals for real-time updates"""
+        # Connect database signals to model
+        alert_db.alert_added.connect(self.alert_model.add_alert)
+        alert_db.alert_resolved.connect(self.alert_model.remove_alert_by_id)
+        alert_db.alerts_loaded.connect(self.alert_model.set_alerts)
         
-        # ------ remove later --------------------------------------
-        # If no saved alerts, generate dummy data (for testing)
-        if not saved_alerts:
-            dummy_alerts = generate_dummy_alerts()
-            for alert in dummy_alerts:
-                self.alert_db.add_alert(alert)  # Save to database
-            saved_alerts = self.alert_db.get_active_alerts()
-        # ----------------------------------------------------------
-        # Display alerts in UI
-        for alert in saved_alerts:
-            self._alerts_list.add_alert(alert)
+        # Connect page signals to database
+        self.alert_removal_requested.connect(alert_db.resolve_alert)
+        self.initial_load_requested.connect(alert_db.load_alerts)
+        
+        # Now that signals are connected, request initial data load
+        self.initial_load_requested.emit()
+    
+    def _on_remove_button_clicked(self, row_index: int):
+        """Handle remove button click"""
+        # Get the alert from the model using the row index
+        alert = self.alert_model.get_alert_at_row(row_index)
+        if alert:
+            # Emit signal instead of calling database directly
+            self.alert_removal_requested.emit(alert.id)
+    
+    def _on_table_leave(self, event):
+        """Handle mouse leaving the table view"""
+        self.button_delegate._hovered_row = None
+        self.alert_view.viewport().update()
+        # Call the original leaveEvent if it exists
+        if hasattr(QTableView, 'leaveEvent'):
+            QTableView.leaveEvent(self.alert_view, event)
     
     def get_title(self) -> str:
-        """Return the page title"""
         return "System Alerts"
     
     def get_description(self) -> str:
-        """Return the page description"""
-        return "This page displays real-time alerts and notifications about system issues, device failures, and critical events that require immediate attention."
-    
-    def refresh_alerts(self):
-        """Refresh the alerts list from database"""
-        # Clear current display
-        self._alerts_list._alerts.clear()
-        self._alerts_list._table.setRowCount(0)
-        
-        # Reload from database
-        self._load_alerts()
-    
-    def add_new_alert(self, alert):
-        """Add new alert (called by monitoring system)"""
-        self.alert_db.add_alert(alert)
-        self._alerts_list.add_alert(alert)
+        return "Real-time alerts with Model/View pattern for automatic updates"
     
     def cleanup(self):
         """Clean up resources when page is destroyed"""
