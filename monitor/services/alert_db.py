@@ -7,6 +7,11 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Signal
 from monitor.services.alert_models import Alert, AlertType
 from monitor.log_setup import get_logger
+# TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
+import threading
+import time
+import random
+# TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
 
 class AlertDatabase(QObject):
     """Database for persistent alert storage"""
@@ -24,6 +29,12 @@ class AlertDatabase(QObject):
         self.db_file = db_file
         self.logger.info(f"Initializing alert database: {db_file}")
         self._init_database()
+        
+        # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
+        # Test thread control
+        self._test_thread = None
+        self._stop_test = False
+        # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
     
     def _init_database(self):
         """Initialize alerts table"""
@@ -54,6 +65,66 @@ class AlertDatabase(QObject):
         except Exception as e:
             self.logger.error(f"Failed to add alert {alert.id}: {e}")
             return False
+    
+    # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
+    def start_threaded_test_alerts(self, interval_seconds: float = 2.0):
+        """Start generating test alerts from background thread"""
+        if self._test_thread and self._test_thread.is_alive():
+            self.logger.warning("Test thread already running")
+            return
+            
+        self._stop_test = False
+        self._test_thread = threading.Thread(
+            target=self._threaded_alert_generator,
+            args=(interval_seconds,),
+            daemon=True  # Dies when main program exits
+        )
+        self._test_thread.start()
+        self.logger.info(f"Started threaded test alerts (interval: {interval_seconds}s)")
+
+    def stop_threaded_test_alerts(self):
+        """Stop the background test thread"""
+        self._stop_test = True
+        if self._test_thread:
+            self._test_thread.join(timeout=1.0)  # Wait max 1 second
+        self.logger.info("Stopped threaded test alerts")
+
+    def _threaded_alert_generator(self, interval: float):
+        """Background thread that generates test alerts"""
+        counter = 0
+        
+        while not self._stop_test:
+            counter += 1
+            alert_type = random.choice(list(AlertType))
+            
+            # Generate alert data based on type (from your dummy logic)
+            if alert_type == AlertType.SPRINKLER:
+                letter = chr(65 + random.randint(0, 25))
+                group = random.randint(1, 5)
+                sprinkler_number = random.randint(1, 4)
+                description = f"{letter}{group} - {sprinkler_number}"
+            elif alert_type == AlertType.FAN:
+                group = random.randint(1, 5)
+                description = f"AY{group} - 1, 2, 3, 4"
+            elif alert_type == AlertType.CAMERA:
+                ip = f"192.168.1.{202 + random.randint(0, 8)}"
+                description = ip
+            else:  # SOFTWARE
+                description = "error"
+            
+            # Create alert (this runs in background thread)
+            test_alert = Alert(
+                id=f"thread-test-{counter}",
+                alert_type=alert_type,
+                description=description,
+                timestamp=datetime.now()
+            )
+            
+            # Add to database (this method handles thread-safety via signals)
+            self.add_alert(test_alert)
+            
+            time.sleep(interval)
+    # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
     
     def get_active_alerts(self) -> List[Alert]:
         """Get all unresolved alerts"""

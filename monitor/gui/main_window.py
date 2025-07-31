@@ -1,5 +1,5 @@
 from pathlib import Path
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
 from monitor.gui.widgets.navigation_bar import NavigationBar
@@ -190,6 +190,17 @@ class MainWindow(QMainWindow):
             self._update_content(page_name)
         except Exception as e:
             self.logger.error(f"Failed to change to page '{page_name}'", exc_info=True)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Handle application close event when user clicks the X button"""
+        self.logger.info("User initiated application close via X button")
+        self.logger.debug("Application is shutting down gracefully")
+        
+        # Accept the close event to allow the application to close
+        event.accept()
+        
+        # Call the parent's closeEvent to ensure proper cleanup
+        super().closeEvent(event)
 
     # --------------------------------------------------------------------------
     # private helpers

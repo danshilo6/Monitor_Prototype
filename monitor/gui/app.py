@@ -1,4 +1,5 @@
 import sys
+import argparse
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QDir, QFile
 from PySide6.QtGui import QIcon
@@ -63,8 +64,30 @@ def create_main_window(config_service: ConfigService) -> MainWindow:
         raise
 
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Monitor Prototype Application")
+    # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
+    parser.add_argument(
+        "--test-alerts", 
+        action="store_true", 
+        help="Enable test alert generation for GUI testing"
+    )
+    parser.add_argument(
+        "--test-interval", 
+        type=float, 
+        default=3.0, 
+        help="Interval between test alerts in seconds (default: 3.0)"
+    )
+    # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
+    return parser.parse_args()
+
+
 def main() -> int:
     """Main application entry point."""
+    # Parse command line arguments
+    args = parse_arguments()
+    
     # Initialize logging first
     init_logging(mode="sync")  # Simple synchronous logging
     logger = get_logger("monitor.gui.app")
@@ -83,6 +106,13 @@ def main() -> int:
         # Create main window
         window = create_main_window(config_service)
         window.show()
+        
+        # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
+        # Start test alert generation if requested
+        if args.test_alerts and hasattr(window, '_alert_db'):
+            window._alert_db.start_threaded_test_alerts(args.test_interval)
+            logger.info(f"Started test alert generation (interval: {args.test_interval}s)")
+        # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
         
         logger.info("Application startup completed, entering main loop")
         
