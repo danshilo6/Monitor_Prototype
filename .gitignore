@@ -4,6 +4,7 @@ alerts.db
 contacts.db
 data/
 *.db
+*.csv
 # -others
 monitor_prototype/
 test_navigation_bar.py
