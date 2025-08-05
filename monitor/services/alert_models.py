@@ -11,6 +11,13 @@ class AlertType(Enum):
     FAN = "fan"
     CAMERA = "camera"
     SOFTWARE = "software"
+    GROUP = "group"
+    THREAD = "thread"
+    DEVICE_MODE_THREAD = "device_mode_thread"
+    SYSTEM_HEALTH = "system_health"
+    COMPORT = "comport"
+    THI = "THI"  # Keep uppercase to match DeviceType.THI value
+    UNKNOWN = "unknown"
 
 @dataclass
 class Alert:

@@ -1,321 +1,402 @@
 """
 Log Processor
 
-Continuously reads new log entries from the logs database and updates the device status database.
+Simple log processor that reads new log entries and emits Qt signals to a DecisionEngine.
 
 Main functionality:
-- Reads logs in batches from the log database
-- Extracts device status information from each log entry
-- Tracks consecutive status counts for each device
-- Updates the device status database with current states
-- Runs continuously with configurable polling intervals
+- Reads new log entries from the logs database
+- Emits Qt signals when new data is available
+- Designed to be moved to a thread by the main application
+- Minimal processing - focuses on data reading and signaling
 """
 
-import sys
 import time
-import signal
+import re
 from pathlib import Path
-from datetime import datetime
-from typing import Set, Dict, Tuple
+import pandas as pd
+from dataclasses import replace
+from PySide6.QtCore import QObject, Signal, QTimer, Slot
 from monitor.core.log_reader import LogReader
-from monitor.services.device_status_db import DeviceStatusDatabase
-from monitor.services.device_status_models import DeviceStatusInfo
-from monitor.services.status_evaluator import StatusEvaluator
-from monitor.services.config_service import ConfigService
 from monitor.log_setup import get_logger
+from monitor.services.devices_models import DeviceType, DeviceInfo
+from monitor.services.devices_db import DevicesDatabase
 
 
-class LogProcessor:
+class LogProcessor(QObject):
     """
-    Processes logs and updates device status database using batch processing.
+    Device status processor that reads logs and maintains device state tracking.
     
-    Core operations:
-    - Reads new log entries in configurable batch sizes
-    - Processes device status changes in memory
-    - Maintains consecutive status counts for each device
-    - Updates device status database with batch writes
-    - Detects new devices and tracks known device list
+    This processor focuses on:
+    - Reading new log entries efficiently
+    - Updating device status tracking in the database
+    - Designed to be moved to a thread by the application
+    - Minimal processing overhead
     """
     
-    # Processing constants
-    DEFAULT_POLLING_INTERVAL = 2.0  # seconds between polling for new logs
-    DEFAULT_LOG_BATCH_SIZE = 100  # max logs to process per batch
-    INITIAL_CONSECUTIVE_COUNT = 1  # count when status first appears or changes
+    # Qt Signals
+    new_logs_processed = Signal(int)     # Emits when new logs are found and processed (with count)
+    no_logs_found = Signal()             # Emits when no new logs are found in this batch
+    error_occurred = Signal(str)         # Emits error message
+    finished = Signal()                  # Emits when processor has finished cleanup (for thread cleanup)
     
-    # System devices to ignore (not real hardware)
-    SYSTEM_DEVICES = {'thread', 'system_health', 'system', 'scheduler'}
-    
-    # Log entry column names
-    LOG_COLUMN_DEVICE = 'device'
-    LOG_COLUMN_STATUS = 'status' 
-    LOG_COLUMN_TIMESTAMP = 'timestamp'
-    
-    def __init__(self, db_directory: Path, polling_interval: float = None, batch_size: int = None, device_status_db_path: str = None, config_path: str = None):
+    def __init__(self, 
+                 logs_directory: Path,
+                 data_directory: Path,
+                 batch_interval: float = 2.0):
         """
         Initialize the log processor.
         
         Args:
-            db_directory: Directory containing the log database files
-            polling_interval: Time in seconds between polling for new logs (default: 2.0)
-            batch_size: Max logs to process per batch (default: 100)
-            device_status_db_path: Optional path for device status database (for testing)
-            config_path: Optional path to config file (default: "config.json")
+            logs_directory: Directory containing the log database files
+            data_directory: Directory containing the devices database
+            batch_interval: Time in seconds between batch processing cycles
         """
+        super().__init__()
         self.logger = get_logger("monitor.core.log_processor")
         
-        # Load configuration
-        self.config_service = ConfigService(config_path) if config_path else ConfigService()
-        self.relay_fail_threshold = int(self.config_service.get("devices", "relay_fail_threshold", 200))
-        self.logger.info(f"Using relay fail threshold: {self.relay_fail_threshold}")
-        
-        # Initialize status evaluator
-        self.status_evaluator = StatusEvaluator(fail_threshold=self.relay_fail_threshold)
-        
         # Configuration
-        self.db_directory = db_directory
-        self.polling_interval = polling_interval or self.DEFAULT_POLLING_INTERVAL
-        self.batch_size = batch_size or self.DEFAULT_LOG_BATCH_SIZE
-        self.running = False
+        self.logs_directory = logs_directory
+        self.data_directory = data_directory
+        self.batch_interval = batch_interval
         
-        # Initialize components
-        self.log_reader = LogReader(db_directory)
-        self.device_status_db = DeviceStatusDatabase(device_status_db_path) if device_status_db_path else DeviceStatusDatabase()
+        # State
+        self._running = False
         
-        # Track devices we've seen to detect new ones
-        self.known_devices: Set[str] = set()
+        # Log reader - handles its own state persistence
+        self.log_reader = LogReader(logs_directory)
         
-        # Setup signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # Devices database
+        self.devices_db = DevicesDatabase(data_directory / "devices.db")
         
-        self.logger.info(f"Log processor initialized: interval={self.polling_interval}s, batch_size={self.batch_size}")
+        # Expected system threads that should always be monitored
+        self._expected_threads = [
+            {'id': 'thread', 'type': DeviceType.THREAD},
+            {'id': 'device_mode_thread', 'type': DeviceType.DEVICE_MODE_THREAD}, 
+            {'id': 'system_health', 'type': DeviceType.SYSTEM_HEALTH}
+        ]
+        
+        # Timer for batch processing (will be created when started)
+        self._batch_timer = None
+        
+        self.logger.info(f"LogProcessor initialized: interval={batch_interval}s")
     
-    def _signal_handler(self, signum, frame):
-        """Handle shutdown signals gracefully."""
-        self.logger.info(f"Received signal {signum}. Shutting down gracefully...")
-        self.stop()
-    
-    def start(self):
-        """Start processing logs continuously."""
-        self.running = True
-        self.logger.info("Starting log processor...")
+    @Slot()
+    def start(self) -> None:
+        """Start the log processor batch processing."""
+        if self._running:
+            self.logger.warning("LogProcessor is already running")
+            return
         
-        # Load existing device statuses to avoid redundant database calls
-        existing_statuses = self.device_status_db.get_all_device_statuses()
-        self.known_devices = set(existing_statuses.keys())
-        self.logger.info(f"Loaded {len(self.known_devices)} existing devices from status database")
+        # Create timer on the current thread (worker thread)
+        if self._batch_timer is None:
+            self._batch_timer = QTimer()
+            self._batch_timer.timeout.connect(self._process_batch)
+            self._batch_timer.setInterval(int(self.batch_interval * 1000))  # Convert to milliseconds
         
-        try:
-            while self.running:
-                self._process_log_batch()
-                time.sleep(self.polling_interval)
-        except KeyboardInterrupt:
-            self.logger.info("Keyboard interrupt received")
-        finally:
-            self.stop()
+        self._running = True
+        
+        # Ensure expected threads exist in database (one-time setup)
+        self._ensure_expected_threads_exist()
+        
+        self._batch_timer.start()
+        self.logger.info("LogProcessor started")
     
-    def stop(self):
-        """Stop processing and cleanup resources."""
-        if self.running:
-            self.logger.info("Stopping log processor...")
-            self.running = False
-            self.log_reader.close()
-            self.device_status_db.close()
-            self.logger.info("Log processor stopped")
+    @Slot()
+    def stop(self) -> None:
+        """Stop the log processor."""
+        if not self._running:
+            return
+        
+        self.logger.info("Stopping LogProcessor...")
+        self._running = False
+        
+        # Stop timer if it exists (must be done from the same thread that created it)
+        if self._batch_timer is not None:
+            self._batch_timer.stop()
+            self._batch_timer.deleteLater()
+            self._batch_timer = None
+        
+        self.log_reader.close()
+        self.devices_db.close()
+        self.logger.info("LogProcessor stopped")
+        self.finished.emit()  # Emit finished signal for thread cleanup
     
-    def _process_log_batch(self):
-        """Process a batch of new log entries efficiently."""
-        try:
-            # Step 1: Get new logs
-            new_logs = self.log_reader.read_next(limit=self.batch_size)
-            
-            if new_logs.empty:
-                return
-            
-            self.logger.debug(f"Processing batch of {len(new_logs)} log entries")
-            
-            # Step 2: Get current device statuses (one database call)
-            database_device_statuses = self.device_status_db.get_all_device_statuses()
-            
-            # Step 3: Process logs in memory and calculate updates
-            updated_device_statuses = self._calculate_status_updates(new_logs, database_device_statuses)
-            
-            # Step 4: Write all updates to database
-            self._apply_status_updates(updated_device_statuses)
-            
-        except Exception as e:
-            self.logger.error(f"Error processing log batch: {e}")
+    def is_running(self) -> bool:
+        """Check if the processor is currently running."""
+        return self._running
     
-    def _calculate_status_updates(self, new_logs, database_device_statuses: Dict[str, DeviceStatusInfo]) -> Dict[str, DeviceStatusInfo]:
+    def _ensure_expected_threads_exist(self) -> None:
+        """Add expected system threads to database if missing (one-time setup)."""
+        from datetime import datetime
+        
+        current_time = datetime.now()
+        devices_in_memory = self.devices_db.get_all()
+        
+        for thread_config in self._expected_threads:
+            thread_id = thread_config['id']
+            thread_type = thread_config['type']
+            
+            if thread_id not in devices_in_memory:
+                # Create missing thread device with baseline status
+                thread_device = DeviceInfo(
+                    device_id=thread_id,
+                    device_type=thread_type.value,
+                    status='success',  # Initial status
+                    last_updated=current_time,
+                    last_log_status='success',
+                    last_log_consecutive_count=1,
+                    success_count=1,
+                    fail_count=0
+                )
+                
+                self.logger.info(f"Adding expected thread to database: {thread_id} ({thread_type.value})")
+                self.devices_db.update_device(thread_device)
+    
+    def _determine_device_type(self, device_name: str) -> DeviceType:
         """
-        Calculate all status updates from logs using status evaluator.
-        
-        For each device:
-        - Updates log tracking information (last status, consecutive count)
-        - Uses StatusEvaluator to determine if device status should change
+        Determine device type based on device name patterns.
         
         Args:
-            new_logs: DataFrame of new log entries
-            database_device_statuses: Dict of current device statuses from database
+            device_name: The device identifier/name
             
         Returns:
-            Dict mapping device_id to updated DeviceStatusInfo
+            DeviceType enum value
         """
-        updated_device_statuses = {}  # device_id -> DeviceStatusInfo
+        if not device_name:
+            return DeviceType.UNKNOWN
         
-        for _, log_entry in new_logs.iterrows():
-            device_id = log_entry.get(self.LOG_COLUMN_DEVICE, '').strip()
-            log_status = log_entry.get(self.LOG_COLUMN_STATUS, '').strip()
-            
-            # Skip invalid or system entries
-            if not self._is_valid_device_entry(device_id, log_status):
-                continue
-            
-            # Track new devices
-            if device_id not in self.known_devices:
-                self.logger.info(f"New device detected: {device_id}")
-                self.known_devices.add(device_id)
-            
-            # Get current status (from previous update in this batch or from database)
-            if device_id in updated_device_statuses:
-                current_info = updated_device_statuses[device_id]
-            elif device_id in database_device_statuses:
-                current_info = database_device_statuses[device_id]
-            else:
-                # New device: create initial status info
-                current_info = DeviceStatusInfo(
-                    device_id=device_id,
-                    current_status='',  # Will be determined by status evaluator
-                    last_log_status='',  # Will be set by status evaluator
-                    count=0,  # Will be incremented by status evaluator
-                    last_updated=datetime.now()
-                )
-                self.logger.info(f"New device {device_id} detected")
-            
-            # Use status evaluator to determine updated status
-            updated_info = self.status_evaluator.evaluate_status_after_log(current_info, log_status)
-            
-            # Log status changes
-            if updated_info.current_status != current_info.current_status:
-                self.logger.info(f"Device {device_id} status changed from '{current_info.current_status}' to '{updated_info.current_status}' after {updated_info.count} consecutive '{log_status}' logs")
-            else:
-                self.logger.debug(f"Device {device_id}: {log_status} count = {updated_info.count} (status: {updated_info.current_status}, threshold: {self.relay_fail_threshold})")
-            
-            # Store the updated status info
-            updated_device_statuses[device_id] = updated_info
+        device_name = device_name.strip()
         
-        return updated_device_statuses
+        # Camera: IP address pattern (num.num.num.num)
+        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+        if re.match(ip_pattern, device_name):
+            return DeviceType.CAMERA
+        
+        # Thread: specific thread names
+        thread_names = ["thread", "device_mode_thread", "system_health"]
+        if device_name.lower() in thread_names:
+            return DeviceType.THREAD
+        
+        # Comport: exact match
+        if device_name.lower() == "comport":
+            return DeviceType.COMPORT
+        
+        # THI: exact match
+        if device_name.upper() == "THI":
+            return DeviceType.THI
+        
+        # Group: string + number + " - " + multiple numbers separated by spaces ending with "G"
+        # Example: AZ4 - 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68G
+        group_pattern = r'^[A-Za-z]+\d+\s*-\s*(\d+\s+)*\d+G$'
+        if re.match(group_pattern, device_name):
+            return DeviceType.GROUP
+        
+        # Fan: string + number + " - " + multiple numbers separated by spaces (no trailing G)
+        # Example: AR1 - 65 66 67 68
+        fan_pattern = r'^[A-Za-z]+\d+\s*-\s*(\d+\s+){2,}\d+$'
+        if re.match(fan_pattern, device_name):
+            return DeviceType.FAN
+        
+        # Sprinkler: string + number + " - " + single number
+        # Example: B4 - 8
+        sprinkler_pattern = r'^[A-Za-z]+\d+\s*-\s*\d+$'
+        if re.match(sprinkler_pattern, device_name):
+            return DeviceType.SPRINKLER
+        
+        # Default to unknown if no pattern matches
+        return DeviceType.UNKNOWN
     
-    def _is_valid_device_entry(self, device_id: str, status: str) -> bool:
+    def _create_new_device(self, device_id: str, log_status: str) -> DeviceInfo:
         """
-        Check if a log entry represents a valid device status update.
+        Create a new device with initial status.
         
         Args:
             device_id: The device identifier
-            status: The status value
+            log_status: The initial status from the first log entry
             
         Returns:
-            True if this entry should be processed
+            New DeviceInfo instance
         """
-        # Must have both device and status
-        if not device_id or not status:
-            return False
+        device_type = self._determine_device_type(device_id)
+        device_info = DeviceInfo(
+            device_id=device_id,
+            device_type=str(device_type),
+            status=log_status,  # Initial status from first log
+            last_log_status=log_status,
+            last_log_consecutive_count=1,
+            success_count=1 if log_status == 'success' else 0,
+            fail_count=1 if log_status == 'fail' else 0,
+            recent_pattern='S' if log_status == 'success' else 'F'
+        )
         
-        # Skip system devices
-        if device_id.lower() in self.SYSTEM_DEVICES:
-            return False
-        
-        return True
+        self.logger.debug(f"Created new device: {device_id} (type: {device_type}, initial status: {log_status})")
+        return device_info
     
-    def _apply_status_updates(self, updated_device_statuses: Dict[str, DeviceStatusInfo]):
+    def _update_existing_device(self, device: DeviceInfo, log_status: str, max_history: int = 50) -> DeviceInfo:
         """
-        Apply the calculated status updates to the database.
+        Update an existing device with a new log status.
         
         Args:
-            updated_device_statuses: Dict mapping device_id to DeviceStatusInfo
-        """
-        if not updated_device_statuses:
-            return
-        
-        successful_updates = 0
-        failed_updates = 0
-        
-        for device_id, status_info in updated_device_statuses.items():
-            # Write the updated status info to database
-            success = self.device_status_db.update_device_status(status_info)
+            device: The existing DeviceInfo to update
+            log_status: The new status from the log entry
+            max_history: Maximum history length to maintain
             
-            if success:
-                successful_updates += 1
-            else:
-                failed_updates += 1
-                self.logger.warning(f"Failed to update status for device {device_id}")
-        
-        # Log the results
-        total_processed = len(updated_device_statuses)
-        self.logger.debug(f"Database updates: {successful_updates}/{total_processed} successful")
-        
-        if failed_updates > 0:
-            self.logger.error(f"{failed_updates} device status updates failed")
-    
-    def get_status_summary(self) -> Dict:
-        """
-        Get a summary of current device statuses.
-        
         Returns:
-            Dict with total_devices, status_counts, and last_updated
+            Updated DeviceInfo instance
         """
+        # Update the device with the new log status (adds to history and updates counts)
+        updated_device = device.add_status_to_history(log_status, max_history)
+        
+        # Update consecutive count logic
+        if log_status == device.last_log_status:
+            # Same status as before: increment count
+            updated_device = replace(
+                updated_device,
+                last_log_consecutive_count=device.last_log_consecutive_count + 1
+            )
+        else:
+            # Different status: reset count to 1
+            updated_device = replace(
+                updated_device,
+                last_log_consecutive_count=1
+            )
+        
+        # Update the main status field to match the latest log status
+        updated_device = replace(
+            updated_device,
+            status=log_status
+        )
+        
+        return updated_device
+    
+    def _get_logged_devices(self, new_logs: pd.DataFrame) -> list[str]:
+        """
+        Get the unique device IDs that have new log entries.
+        
+        Args:
+            new_logs: DataFrame containing the new log entries
+            
+        Returns:
+            Sorted list of unique device IDs that have new logs
+        """
+        unique_devices = new_logs['device'].dropna().unique()
+        return sorted(unique_devices)
+    
+    def _process_batch(self) -> None:
+        """Read all new logs and update device statuses accordingly."""
+        # Check if processor is still running before processing
+        if not self._running:
+            return
+            
         try:
-            all_statuses = self.device_status_db.get_all_device_statuses()
+            # Step 1: Read all new logs (no limit)
+            new_logs = self.log_reader.read_next()
             
-            summary = {
-                'total_devices': len(all_statuses),
-                'status_counts': {},
-                'last_updated': None
-            }
+            if new_logs.empty:
+                # No new logs found - debug log this
+                self.logger.debug("No new log entries found in this batch")
+                self.no_logs_found.emit()
+                return
             
-            latest_update = None
-            for device_id, status_info in all_statuses.items():
-                # Count devices by status
-                summary['status_counts'][status_info.current_status] = summary['status_counts'].get(status_info.current_status, 0) + 1
+            self.logger.debug(f"Found {len(new_logs)} new log entries to process")
+            
+            # Step 2: Load current devices from database into memory
+            devices_in_memory = self.devices_db.get_all()
+            self.logger.debug(f"Loaded {len(devices_in_memory)} devices from database")
+            
+            # Step 3: Process logs line by line and update in-memory devices
+            processed_count = 0
+            for _, log_entry in new_logs.iterrows():
+                device_id = log_entry.get('device', '')
+                log_status = log_entry.get('status', '')
                 
-                # Track latest update time
-                if latest_update is None or status_info.last_updated > latest_update:
-                    latest_update = status_info.last_updated
+                if not device_id or not log_status:
+                    self.logger.warning(f"Skipping log entry with missing device_id or status: {log_entry}")
+                    continue
+                
+                # Get or create device info
+                if device_id in devices_in_memory:
+                    device_info = devices_in_memory[device_id]
+                    # Update existing device
+                    max_history = 50  # TODO: Get from config based on device_type
+                    updated_device = self._update_existing_device(device_info, log_status, max_history)
+                else:
+                    # Create new device
+                    updated_device = self._create_new_device(device_id, log_status)
+                
+                # Store updated device back in memory
+                devices_in_memory[device_id] = updated_device
+                processed_count += 1
             
-            summary['last_updated'] = latest_update
-            return summary
+            # Debug log which devices had new logs in this batch
+            logged_devices = self._get_logged_devices(new_logs)
+            if logged_devices:
+                device_list = '\n'.join(logged_devices)
+                self.logger.debug(f"Devices with new logs in this batch: {device_list}")
             
+            # Step 4: Write all updated devices back to database
+            success_count = 0
+            for device_id, device_info in devices_in_memory.items():
+                if self.devices_db.update_device(device_info):
+                    success_count += 1
+                else:
+                    self.logger.error(f"Failed to update device {device_id} in database")
+            
+            self.logger.debug(f"Processed {processed_count} log entries, updated {success_count} devices in database")
+            
+            # Emit new logs processed signal with count
+            self.new_logs_processed.emit(len(new_logs))
+                
         except Exception as e:
-            self.logger.error(f"Error getting status summary: {e}")
-            return {
-                'total_devices': 0, 
-                'status_counts': {}, 
-                'last_updated': None
-            }
+            error_msg = f"Error processing log batch: {e}"
+            self.logger.error(error_msg)
+            self.error_occurred.emit(error_msg)
 
 
 def main():
-    """Main entry point for the log processor."""
+    """Simple main function for testing the log processor."""
+    import sys
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QThread
+    
+    def on_new_logs_processed(count: int):
+        print(f"Processed {count} new log entries")
+    
+    def on_no_logs_found():
+        print("No new logs found in this batch")
+    
+    def on_error(error_msg: str):
+        print(f"Error: {error_msg}")
+    
+    app = QApplication(sys.argv)
+    
     try:
-        # Create processor with default settings
+        # Use current working directory for testing
+        db_directory = Path.cwd()
         processor = LogProcessor(
-            db_directory=Path('.'), 
-            polling_interval=LogProcessor.DEFAULT_POLLING_INTERVAL,
-            batch_size=LogProcessor.DEFAULT_LOG_BATCH_SIZE
+            db_directory=db_directory,
+            batch_interval=2.0
         )
         
-        print("Starting log processor...")
-        print(f"Batch size: {processor.batch_size} logs")
-        print(f"Polling interval: {processor.polling_interval}s")
-        print("Processing logs and updating device statuses...")
+        # Connect signals
+        processor.new_logs_processed.connect(on_new_logs_processed)
+        processor.no_logs_found.connect(on_no_logs_found)
+        processor.error_occurred.connect(on_error)
+        
+        print("Starting LogProcessor...")
         print("Press Ctrl+C to stop")
-        print("=" * 50)
         
         processor.start()
         
-    except Exception as e:
-        print(f"❌ Failed to start log processor: {e}")
-        sys.exit(1)
+        # Run the Qt event loop
+        sys.exit(app.exec_())
+        
+    except KeyboardInterrupt:
+        print("\nShutdown requested...")
+    finally:
+        if 'processor' in locals():
+            processor.stop()
+        print("LogProcessor stopped")
 
 
 if __name__ == "__main__":

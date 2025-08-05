@@ -9,16 +9,30 @@ from datetime import datetime
 from typing import List, Dict
 from pathlib import Path
 
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 class LogSimulator:
     """Simulates Ein Tzofia's device logging behavior"""
     
-    def __init__(self, db_directory: str = ".", custom_db_name: str = None):
+    def __init__(self, db_directory: str = None, custom_db_name: str = None, logs_csv_path: str = None):
+        # Get the main project directory
+        script_dir = Path(__file__).parent
+        project_root = script_dir.parent
+        
+        # Use provided directory or default to main project folder
+        if db_directory is None:
+            db_directory = str(project_root)
+        
         # Generate the database file name based on the current date or use custom name
         if custom_db_name:
             self.db_path = Path(db_directory) / custom_db_name
         else:
-            current_date = datetime.now().strftime("%Y_%m_%d")
+            current_date = datetime.now().strftime("%Y-%m-%d")
             self.db_path = Path(db_directory) / f"logs_{current_date}.db"
+        
+        # Store the custom CSV path if provided
+        self.logs_csv_path = logs_csv_path
         
         # Load device status dictionary from devices CSV  
         self.devices = self.load_devices_from_csv()
@@ -65,14 +79,20 @@ class LogSimulator:
     
     def load_log_entries_from_csv(self) -> List[Dict]:
         """
-        Load actual log entries from logs_2025-07-27.csv file.
+        Load actual log entries from logs CSV file.
+        Uses custom path if provided, otherwise uses logs_2025-07-07.csv file.
         
         Returns:
             List of log entry dictionaries
         """
-        script_dir = Path(__file__).parent
-        project_root = script_dir.parent
-        csv_file = project_root / "logs_2025-07-27.csv"
+        if self.logs_csv_path:
+            # Use the provided custom CSV path
+            csv_file = Path(self.logs_csv_path)
+        else:
+            # Use default path
+            script_dir = Path(__file__).parent
+            project_root = script_dir.parent
+            csv_file = project_root / "logs_2025-07-07.csv"
         
         log_entries = []
         
@@ -128,8 +148,10 @@ class LogSimulator:
         """
         Delete the current database file and reset position to 0.
         This allows starting fresh with a clean database.
+        Also resets LogReader state for consistent testing.
         """
         import os
+        from monitor.core.log_reader import LogReader
         
         # Reset position to start from beginning of log entries
         self.current_position = 0
@@ -141,6 +163,9 @@ class LogSimulator:
                 print(f"Deleted existing database: {self.db_path}")
             except Exception as e:
                 print(f"Warning: Could not delete database {self.db_path}: {e}")
+        
+        # Reset LogReader state for consistent testing
+        LogReader.reset_state()
         
         # Recreate the database with fresh tables
         self.setup_database()
@@ -193,12 +218,13 @@ class LogSimulator:
                 log_entry['created_at']
             ))
     
-    def run_simulation_cycle(self, num_logs: int = 100):
+    def run_simulation_cycle(self, num_logs: int = 100, failed_devices_only: bool = False):
         """
         Run one simulation cycle reading log entries sequentially and applying device statuses.
         
         Args:
             num_logs: Number of log entries to process from current position
+            failed_devices_only: If True, only log entries for devices marked as 'fail'
         """
         if not self.log_entries:
             print("No log entries loaded. Cannot run simulation.")
@@ -206,17 +232,37 @@ class LogSimulator:
         
         # Read the next X log entries sequentially
         entries_to_process = []
-        for i in range(num_logs):
+        processed_count = 0
+        
+        while processed_count < num_logs and self.current_position < len(self.log_entries):
+            log_entry = self.log_entries[self.current_position]
+            device_name = log_entry['device']
+            
+            # Check if we should include this entry
+            should_include = True
+            if failed_devices_only:
+                # Only include if device is marked as 'fail'
+                device_status = self.devices.get(device_name, 'success')
+                should_include = (device_status == 'fail')
+            
+            if should_include:
+                entries_to_process.append(log_entry)
+                processed_count += 1
+            
+            self.current_position += 1
+            
+            # If we've reached the end, start over from the beginning
             if self.current_position >= len(self.log_entries):
-                # If we've reached the end, start over from the beginning
                 self.current_position = 0
                 print("Reached end of log entries, starting over from beginning")
-            
-            log_entry = self.log_entries[self.current_position]
-            entries_to_process.append(log_entry)
-            self.current_position += 1
+                break
+        
+        # If we couldn't find enough entries (in failed_devices_only mode), process what we have
+        if failed_devices_only and processed_count < num_logs:
+            print(f"Only found {processed_count} entries for failed devices (requested {num_logs})")
         
         # Process each log entry with device status override
+        logged_count = 0
         for entry in entries_to_process:
             device_name = entry['device']
             
@@ -236,10 +282,15 @@ class LogSimulator:
             
             self.insert_log(log_entry)
             print(f"Logged: {device_name} - {status}")
+            logged_count += 1
+        
+        if failed_devices_only:
+            failed_devices = [name for name, status in self.devices.items() if status == 'fail']
+            print(f"Logged {logged_count} entries for failed devices only (failed devices: {len(failed_devices)})")
         
         print(f"Next cycle will start from position {self.current_position}")
     
-    def run_simulation(self, interval: int = 1, logs_per_cycle: int = 100, reset_db: bool = False, max_duration: int = None):
+    def run_simulation(self, interval: int = 1, logs_per_cycle: int = 100, reset_db: bool = False, max_duration: int = None, failed_devices_only: bool = False):
         """
         Run continuous simulation with specified interval (seconds)
         
@@ -248,6 +299,7 @@ class LogSimulator:
             logs_per_cycle: Number of log entries to process in each cycle
             reset_db: If True, delete existing database and start from position 0
             max_duration: If set, run for only this many seconds (useful for testing)
+            failed_devices_only: If True, only log entries for devices marked as 'fail'
         """
         if reset_db:
             self._reset_database_and_position()
@@ -258,12 +310,18 @@ class LogSimulator:
         print(f"Logs per cycle: {logs_per_cycle}")
         print(f"Interval: {interval} seconds")
         print(f"Starting from position: {self.current_position}")
+        print(f"Failed devices only: {'Yes' if failed_devices_only else 'No'}")
         if max_duration:
             print(f"Max duration: {max_duration} seconds")
         print("Press Ctrl+C to stop")
         
         try:
             self.set_random_devices_to_fail()
+            
+            if failed_devices_only:
+                failed_devices = [name for name, status in self.devices.items() if status == 'fail']
+                print(f"Will only log entries for {len(failed_devices)} failed devices: {failed_devices}")
+            
             start_time = time.time()
             while True:
                 # Check if we've reached max duration
@@ -271,7 +329,7 @@ class LogSimulator:
                     print(f"\nSimulation completed after {max_duration} seconds")
                     break
                     
-                self.run_simulation_cycle(logs_per_cycle)
+                self.run_simulation_cycle(logs_per_cycle, failed_devices_only)
                 time.sleep(interval)
         except KeyboardInterrupt:
             print("\nSimulation stopped by user")
@@ -287,15 +345,19 @@ def main():
                        help='Interval between simulation cycles in seconds')
     parser.add_argument('--logs-per-cycle', type=int, default=100,
                        help='Number of log entries to process per cycle')
-    parser.add_argument('--db-dir', type=str, default=".",
-                       help='Directory where database files should be created')
-    parser.add_argument('--reset-db', action='store_true',
+    parser.add_argument('--db-dir', type=str, default=None,
+                       help='Directory where database files should be created (defaults to main project folder)')
+    parser.add_argument('--logs-csv', type=str, default=None,
+                       help='Path to CSV file containing log entries (if not provided, uses default)')
+    parser.add_argument('--reset', action='store_true',
                        help='Start with a fresh database (delete existing)')
+    parser.add_argument('--failed-only', action='store_true',
+                       help='Only log entries for devices that are set to fail (great for testing)')
     
     args = parser.parse_args()
     
-    # Create simulator with specified directory
-    simulator = LogSimulator(db_directory=args.db_dir)
+    # Create simulator with specified directory and CSV file
+    simulator = LogSimulator(db_directory=args.db_dir, logs_csv_path=args.logs_csv)
     print(f"Database will be created at: {simulator.db_path}")
     print(f"Loaded device statuses: {len(simulator.devices)}")
     print(f"Loaded log entries: {len(simulator.log_entries)}")
@@ -314,25 +376,29 @@ def main():
         logs_per_cycle = args.logs_per_cycle if args.logs_per_cycle != 100 else 5  # Fewer logs for testing
         duration = args.duration if args.duration else 10  # Default 10 seconds for tests
         reset_db = True  # Always reset for clean tests
+        failed_only = args.failed_only  # Use user's choice, don't override in test mode
         
         print("\n[TEST MODE ENABLED]")
         print(f"   Duration: {duration} seconds")
         print(f"   Interval: {interval} seconds") 
         print(f"   Logs per cycle: {logs_per_cycle}")
         print(f"   Reset DB: {reset_db}")
+        print(f"   Failed devices only: {failed_only}")
     else:
         # Production mode settings
         interval = args.interval
         logs_per_cycle = args.logs_per_cycle  
         duration = args.duration
-        reset_db = args.reset_db
+        reset_db = args.reset
+        failed_only = args.failed_only
     
     # Run simulation
     simulator.run_simulation(
         interval=interval,
         logs_per_cycle=logs_per_cycle,
         reset_db=reset_db,
-        max_duration=duration
+        max_duration=duration,
+        failed_devices_only=failed_only
     )
 
 if __name__ == "__main__":

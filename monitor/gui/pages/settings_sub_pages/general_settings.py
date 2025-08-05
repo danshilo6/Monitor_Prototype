@@ -1,7 +1,7 @@
 """General settings tab"""
 
 from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QWidget, QLineEdit, 
-                               QPushButton, QFileDialog, QFormLayout)
+                               QPushButton, QFileDialog, QLabel)
 from PySide6.QtCore import Qt, Signal
 from ...widgets.location_name_dialog import LocationNameDialog
 
@@ -23,23 +23,22 @@ class GeneralSettings(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
         
-        # Create form layout for better alignment
-        form_layout = QFormLayout()
-        form_layout.setSpacing(15)
-        
         # Location Name Section
-        self._create_location_name_section(form_layout)
+        self._create_location_name_section(layout)
         
         # File Path Section  
-        self._create_filepath_section(form_layout)
-        
-        layout.addLayout(form_layout)
+        self._create_filepath_section(layout)
         
         # Add stretch to push content to top
         layout.addStretch()
     
-    def _create_location_name_section(self, form_layout: QFormLayout):
+    def _create_location_name_section(self, layout: QVBoxLayout):
         """Create location name input section"""
+        # Title label
+        location_title = QLabel("Location Name:")
+        location_title.setObjectName("settings-label")
+        layout.addWidget(location_title)
+        
         # Create horizontal layout for location name display and edit button
         location_name_layout = QHBoxLayout()
         
@@ -58,11 +57,16 @@ class GeneralSettings(QWidget):
         location_name_layout.addWidget(self._location_name_display)
         location_name_layout.addWidget(self._edit_location_name_btn)
         
-        # Add to form
-        form_layout.addRow("Location Name:", location_name_layout)
+        # Add horizontal layout to main layout
+        layout.addLayout(location_name_layout)
     
-    def _create_filepath_section(self, form_layout: QFormLayout):
+    def _create_filepath_section(self, layout: QVBoxLayout):
         """Create file path selection section"""
+        # Title label
+        filepath_title = QLabel("Ein-Tzofia Path:")
+        filepath_title.setObjectName("settings-label")
+        layout.addWidget(filepath_title)
+        
         # Create horizontal layout for path display and choose button
         filepath_layout = QHBoxLayout()
         
@@ -81,8 +85,8 @@ class GeneralSettings(QWidget):
         filepath_layout.addWidget(self._filepath_display)
         filepath_layout.addWidget(self._choose_file_btn)
         
-        # Add to form
-        form_layout.addRow("Monitor Program:", filepath_layout)
+        # Add horizontal layout to main layout
+        layout.addLayout(filepath_layout)
     
     def _edit_location_name(self):
         """Open dialog to edit location name"""
@@ -106,7 +110,7 @@ class GeneralSettings(QWidget):
         )
         if file_path:
             self._filepath_display.setText(file_path)
-            self._config.set("general", "monitor_program_path", file_path)
+            self._config.set("general", "eintzofia_path", file_path)
 
     def _load_from_config(self):
         """Load settings from config on startup"""
@@ -117,7 +121,7 @@ class GeneralSettings(QWidget):
         # Load values
         location = self._config.get("general", "location_name", "")
         self._location_name_display.setText(location)
-        program_path = self._config.get("general", "monitor_program_path", "")
+        program_path = self._config.get("general", "eintzofia_path", "")
         self._filepath_display.setText(program_path)
         
         # Re-enable signals

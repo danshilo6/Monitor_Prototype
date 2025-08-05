@@ -1,7 +1,7 @@
 {
   "general": {
     "location_name": "Dan's PC",
-    "monitor_program_path": ""
+    "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_12_07_25.exe"
   },
   "versions": {
     "monitor_version": "12-07-25",
@@ -9,12 +9,13 @@
   },
   "system": {
     "enable_restart": true,
-    "minutes_to_restart": "4",
-    "startup_snooze_time": "4"
+    "minutes_to_restart": "1",
+    "startup_snooze_time": "4",
+    "check_eintzofia_running": true
   },
   "devices": {
-    "relay_fail_threshold": "200",
-    "camera_fail_threshold": "2000",
+    "relay_fail_threshold": "10",
+    "camera_fail_threshold": "0.5",
     "camera_log_minutes": "4"
   }
 }

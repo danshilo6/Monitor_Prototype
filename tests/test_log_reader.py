@@ -20,6 +20,9 @@ class TestLogReader(unittest.TestCase):
 
     def setUp(self):
         """Set up test environment with temporary directory and test databases"""
+        # Clean up any existing LogReader state before tests
+        LogReader.reset_state()
+        
         # Create temporary directory for test databases
         self.test_dir = tempfile.mkdtemp()
         self.test_path = Path(self.test_dir)
@@ -33,8 +36,10 @@ class TestLogReader(unittest.TestCase):
         ]
 
     def tearDown(self):
-        """Clean up test directory"""
+        """Clean up test directory and LogReader state"""
         shutil.rmtree(self.test_dir, ignore_errors=True)
+        # Clean up LogReader state after tests
+        LogReader.reset_state()
 
     def _create_test_db(self, db_date: date, logs_data=None):
         """
@@ -47,7 +52,7 @@ class TestLogReader(unittest.TestCase):
         if logs_data is None:
             logs_data = self.sample_logs
             
-        db_filename = db_date.strftime("logs_%Y_%m_%d.db")
+        db_filename = db_date.strftime("logs_%Y-%m-%d.db")
         db_path = self.test_path / db_filename
         
         conn = sqlite3.connect(str(db_path))
@@ -86,7 +91,7 @@ class TestLogReader(unittest.TestCase):
         
         self.assertEqual(reader._dir, self.test_path)
         self.assertEqual(reader._table, "logs")
-        self.assertEqual(reader._pattern, "logs_%Y_%m_%d.db")
+        self.assertEqual(reader._pattern, "logs_%Y-%m-%d.db")
         self.assertEqual(reader._last_id, 0)
         self.assertEqual(reader._current_day, today)
         
@@ -173,7 +178,7 @@ class TestLogReader(unittest.TestCase):
         self.assertEqual(reader._last_id, 4)
         
         # Add more data to the database
-        db_filename = today.strftime("logs_%Y_%m_%d.db")
+        db_filename = today.strftime("logs_%Y-%m-%d.db")
         db_path = self.test_path / db_filename
         
         conn = sqlite3.connect(str(db_path))
@@ -212,10 +217,10 @@ class TestLogReader(unittest.TestCase):
         """Test read_next when no database file exists"""
         reader = LogReader(self.test_path)
         
-        # Should handle gracefully when no database exists
-        with self.assertRaises(AttributeError):
-            # This will fail because _conn is None
-            df = reader.read_next()
+        # Should handle gracefully when no database exists by returning empty DataFrame
+        df = reader.read_next()
+        self.assertTrue(df.empty, "Should return empty DataFrame when no database exists")
+        self.assertIsInstance(df, pd.DataFrame, "Should return a DataFrame even when no database exists")
         
         reader.close()
 
@@ -252,7 +257,7 @@ class TestLogReader(unittest.TestCase):
         """Test LogReader with custom table name"""
         # Create database with custom table name
         today = date.today()
-        db_filename = today.strftime("logs_%Y_%m_%d.db")
+        db_filename = today.strftime("logs_%Y-%m-%d.db")
         db_path = self.test_path / db_filename
         
         conn = sqlite3.connect(str(db_path))
@@ -388,21 +393,46 @@ class TestLogReader(unittest.TestCase):
                 sys.executable, str(simulator_script),
                 '--test-mode',                    # Enable test mode
                 '--duration', '8',               # Run for 8 seconds
-                '--interval', '0.5',             # Log every 0.5 seconds  
-                '--logs-per-cycle', '3',         # Only 3 logs per cycle
-                '--db-dir', str(temp_path)       # Use our temp directory
-            ], cwd=str(temp_path),
+                '--interval', '1',               # Log every 1 second (slower for reliability)
+                '--logs-per-cycle', '5',         # More logs per cycle
+                '--db-dir', str(temp_path),      # Use our temp directory
+                '--logs-csv', str(project_root / 'logs_2025-07-07.csv'),  # Explicit CSV path
+                '--reset-db'                     # Reset database
+            ], cwd=str(project_root),            # Run from project root
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True)
+            text=True,
+            env=os.environ.copy())               # Copy current environment
             
             try:
-                # Give the simulator time to start and create some logs
-                time.sleep(2)
+                # Give the simulator more time to start and create some logs
+                time.sleep(6)  # Wait longer for simulator to create logs
+                
+                # Check if simulator is still running and capture output
+                if simulator_process.poll() is None:
+                    # Still running - let it complete
+                    print("Simulator process still running, waiting for completion...")
+                    try:
+                        stdout, stderr = simulator_process.communicate(timeout=5)
+                        print(f"Simulator completed. Exit code: {simulator_process.returncode}")
+                    except subprocess.TimeoutExpired:
+                        print("Simulator taking too long, terminating...")
+                        simulator_process.terminate()
+                        stdout, stderr = simulator_process.communicate()
+                else:
+                    # Already finished
+                    stdout, stderr = simulator_process.communicate()
+                    print(f"Simulator finished early. Exit code: {simulator_process.returncode}")
+                
+                # Always show simulator output for debugging
+                if stdout:
+                    print(f"Simulator stdout:\n{stdout}")
+                if stderr:
+                    print(f"Simulator stderr:\n{stderr}")
                 
                 # Verify that the database file was created
                 today = date.today()
-                expected_db_file = temp_path / f"logs_{today.strftime('%Y_%m_%d')}.db"
+                expected_db_file = temp_path / f"logs_{today.strftime('%Y-%m-%d')}.db"
                 
                 # Wait up to 10 seconds for the database file to be created
                 timeout = 10
@@ -410,8 +440,32 @@ class TestLogReader(unittest.TestCase):
                 while not expected_db_file.exists() and (time.time() - start_time) < timeout:
                     time.sleep(0.5)
                 
+                print(f"Expected database file: {expected_db_file}")
+                print(f"Database file exists: {expected_db_file.exists()}")
+                
+                # List all files in temp directory for debugging
+                print(f"Files in temp directory: {list(temp_path.iterdir())}")
+                
                 self.assertTrue(expected_db_file.exists(), 
                                f"Database file should be created by simulator at {expected_db_file}")
+                
+                # Check if database has any data
+                if expected_db_file.exists():
+                    import sqlite3
+                    conn = sqlite3.connect(expected_db_file)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM logs")
+                    count = cursor.fetchone()[0]
+                    print(f"Number of logs in database: {count}")
+                    
+                    if count > 0:
+                        cursor.execute("SELECT * FROM logs LIMIT 3")
+                        sample_logs = cursor.fetchall()
+                        print(f"Sample logs: {sample_logs}")
+                    conn.close()
+                
+                # Verify the simulator created logs
+                self.assertGreater(count, 0, f"Log simulator should have created logs in database. Check simulator output above for errors.")
                 
                 # Initialize LogReader in the same directory
                 reader = LogReader(temp_path)
@@ -421,6 +475,10 @@ class TestLogReader(unittest.TestCase):
                 
                 # Read logs - should find some entries created by the simulator
                 logs_df = reader.read_next()
+                
+                print(f"Logs found: {len(logs_df) if not logs_df.empty else 0}")
+                if not logs_df.empty:
+                    print(f"First few logs:\n{logs_df.head()}")
                 
                 # Verify we got some logs
                 self.assertFalse(logs_df.empty, "LogReader should have found logs created by simulator")
@@ -484,7 +542,7 @@ class TestLogReader(unittest.TestCase):
         try:
             # Create a database with the same structure as the real log simulator
             today = date.today()
-            db_filename = today.strftime("logs_%Y_%m_%d.db")
+            db_filename = today.strftime("logs_%Y-%m-%d.db")
             db_path = temp_path / db_filename
             
             # Create realistic test data similar to what the real simulator would create

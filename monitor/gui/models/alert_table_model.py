@@ -25,7 +25,14 @@ class AlertTableModel(QAbstractTableModel):
             AlertType.FAN: "fan.svg",
             AlertType.SPRINKLER: "sprinkler.svg", 
             AlertType.CAMERA: "camera.svg",
-            AlertType.SOFTWARE: "software.svg"
+            AlertType.SOFTWARE: "software.svg",
+            AlertType.GROUP: "group.svg",
+            AlertType.THREAD: "software.svg",  # All thread alerts use software icon
+            AlertType.DEVICE_MODE_THREAD: "software.svg",  # All thread alerts use software icon
+            AlertType.SYSTEM_HEALTH: "software.svg",  # All thread alerts use software icon
+            AlertType.COMPORT: "comport.svg",
+            AlertType.THI: "THI.svg",
+            AlertType.UNKNOWN: "warning.svg"  # Unknown alerts use warning icon
         }
         
         for alert_type, icon_file in icon_mapping.items():
@@ -37,6 +44,9 @@ class AlertTableModel(QAbstractTableModel):
                 warning_path = self._icons_path / "warning.svg"
                 if warning_path.exists():
                     self._icon_cache[alert_type] = QIcon(str(warning_path))
+                else:
+                    # If even warning icon doesn't exist, create empty icon
+                    self._icon_cache[alert_type] = QIcon()
     
     def rowCount(self, parent=QModelIndex()) -> int:
         return len(self._alerts)

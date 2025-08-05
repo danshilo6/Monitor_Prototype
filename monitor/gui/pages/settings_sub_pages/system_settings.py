@@ -29,6 +29,12 @@ class SystemSettings(QWidget):
         self._enable_restart_checkbox.toggled.connect(self._save_to_config)
         form_layout.addRow("", self._enable_restart_checkbox)
 
+        # Check EinTzofia Running checkbox
+        self._check_eintzofia_running_checkbox = QCheckBox("Check if EinTzofia is running before restart")
+        self._check_eintzofia_running_checkbox.setObjectName("settings-checkbox")
+        self._check_eintzofia_running_checkbox.toggled.connect(self._save_to_config)
+        form_layout.addRow("", self._check_eintzofia_running_checkbox)
+
         # Open Ein Tzofia button
         self._open_ein_tzofia_btn = QPushButton("Open Ein Tzofia")
         self._open_ein_tzofia_btn.setObjectName("open-button")
@@ -69,19 +75,23 @@ class SystemSettings(QWidget):
     def _load_from_config(self):
         # Block signals to prevent saving during load
         self._enable_restart_checkbox.blockSignals(True)
+        self._check_eintzofia_running_checkbox.blockSignals(True)
         self._restart_time_display.blockSignals(True)
         
         # Load values (use the same value for both restart and snooze)
         self._enable_restart_checkbox.setChecked(self._config.get("system", "enable_restart", False))
+        self._check_eintzofia_running_checkbox.setChecked(self._config.get("system", "check_eintzofia_running", True))
         restart_time = self._config.get("system", "minutes_to_restart", "")
         self._restart_time_display.setText(str(restart_time))
         
         # Re-enable signals
         self._enable_restart_checkbox.blockSignals(False)
+        self._check_eintzofia_running_checkbox.blockSignals(False)
         self._restart_time_display.blockSignals(False)
 
     def _save_to_config(self):
         self._config.set("system", "enable_restart", self._enable_restart_checkbox.isChecked())
+        self._config.set("system", "check_eintzofia_running", self._check_eintzofia_running_checkbox.isChecked())
         # Save the same value for both restart and snooze time
         restart_time = self._restart_time_display.text()
         self._config.set("system", "minutes_to_restart", restart_time)
@@ -133,6 +143,10 @@ class SystemSettings(QWidget):
         """Get the enable restart checkbox state"""
         return self._enable_restart_checkbox.isChecked()
     
+    def get_check_eintzofia_running(self) -> bool:
+        """Get the check EinTzofia running checkbox state"""
+        return self._check_eintzofia_running_checkbox.isChecked()
+    
     def get_restart_time(self) -> str:
         """Get the restart/snooze time value"""
         return self._restart_time_display.text()
@@ -140,6 +154,10 @@ class SystemSettings(QWidget):
     def set_enable_restart(self, enabled: bool):
         """Set the enable restart checkbox state"""
         self._enable_restart_checkbox.setChecked(enabled)
+    
+    def set_check_eintzofia_running(self, enabled: bool):
+        """Set the check EinTzofia running checkbox state"""
+        self._check_eintzofia_running_checkbox.setChecked(enabled)
     
     def set_restart_time(self, time: str):
         """Set the restart/snooze time value"""

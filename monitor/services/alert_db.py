@@ -44,23 +44,35 @@ class AlertDatabase(QObject):
                     id TEXT PRIMARY KEY,
                     alert_type TEXT NOT NULL,
                     description TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    resolved INTEGER DEFAULT 0
+                    timestamp TEXT NOT NULL
                 )
             ''')
     
     def add_alert(self, alert: Alert) -> bool:
-        """Add new alert (or update existing)"""
+        """Add new alert (or skip if alert already exists with the same ID)"""
         try:
             with sqlite3.connect(self.db_file) as conn:
-                conn.execute('''
-                    INSERT OR REPLACE INTO alerts 
-                    (id, alert_type, description, timestamp, resolved)
-                    VALUES (?, ?, ?, ?, 0)
-                ''', (alert.id, alert.alert_type.value, alert.description, 
-                      alert.timestamp.isoformat()))
-            self.logger.info(f"Added alert: {alert.alert_type.value} - {alert.description}")
-            self.alert_added.emit(alert)  # Emit signal
+                # Check if an alert with this ID already exists
+                existing = conn.execute('''
+                    SELECT id, timestamp FROM alerts 
+                    WHERE id = ?
+                ''', (alert.id,)).fetchone()
+                
+                if existing:
+                    # Alert with this ID already exists - do nothing, keep original timestamp
+                    self.logger.debug(f"Alert with ID {alert.id} already exists (original timestamp: {existing[1]})")
+                    # Don't emit signal - no change needed
+                else:
+                    # Insert new alert
+                    conn.execute('''
+                        INSERT INTO alerts 
+                        (id, alert_type, description, timestamp)
+                        VALUES (?, ?, ?, ?)
+                    ''', (alert.id, alert.alert_type.value, alert.description, 
+                          alert.timestamp.isoformat()))
+                    self.logger.info(f"Added new alert: {alert.alert_type.value} - {alert.description} (id: {alert.id})")
+                    # Only emit signal for genuinely new alerts
+                    self.alert_added.emit(alert)
             return True
         except Exception as e:
             self.logger.error(f"Failed to add alert {alert.id}: {e}")
@@ -127,11 +139,11 @@ class AlertDatabase(QObject):
     # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
     
     def get_active_alerts(self) -> List[Alert]:
-        """Get all unresolved alerts"""
+        """Get all alerts"""
         with sqlite3.connect(self.db_file) as conn:
             rows = conn.execute('''
                 SELECT id, alert_type, description, timestamp
-                FROM alerts WHERE resolved = 0
+                FROM alerts
                 ORDER BY timestamp DESC
             ''').fetchall()
             
@@ -150,33 +162,44 @@ class AlertDatabase(QObject):
     def load_alerts(self):
         """Load active alerts and emit signal (signal-based interface)"""
         alerts = self.get_active_alerts()
-        
-        # Generate dummy data if needed (remove later)
-        if not alerts:
-            from monitor.services.alert_models import generate_dummy_alerts
-            self.logger.info("No alerts found, generating dummy data")
-            dummy_alerts = generate_dummy_alerts()
-            for alert in dummy_alerts:
-                self.add_alert(alert)
-            # Get the alerts again after adding dummy data
-            self.get_active_alerts()
     
     def resolve_alert(self, alert_id: str) -> bool:
-        """Mark alert as resolved"""
+        """Delete alert"""
         try:
             with sqlite3.connect(self.db_file) as conn:
                 cursor = conn.execute('''
-                    UPDATE alerts SET resolved = 1 WHERE id = ?
+                    DELETE FROM alerts WHERE id = ?
                 ''', (alert_id,))
                 if cursor.rowcount > 0:
-                    self.logger.info(f"Resolved alert: {alert_id}")
+                    self.logger.info(f"Deleted alert: {alert_id}")
                     self.alert_resolved.emit(alert_id)  # Emit signal
                     return True
                 else:
-                    self.logger.warning(f"Alert not found for resolution: {alert_id}")
+                    self.logger.warning(f"Alert not found for deletion: {alert_id}")
                     return False
         except Exception as e:
             self.logger.error(f"Failed to resolve alert {alert_id}: {e}")
+            return False
+
+    def resolve_alerts_for_device(self, device_id: str) -> bool:
+        """Delete all alerts for a specific device"""
+        try:
+            with sqlite3.connect(self.db_file) as conn:
+                # Delete alerts with matching ID
+                cursor = conn.execute('''
+                    DELETE FROM alerts WHERE id = ?
+                ''', (device_id,))
+                
+                if cursor.rowcount > 0:
+                    self.logger.info(f"Deleted {cursor.rowcount} alert(s) for device: {device_id}")
+                    # Emit signal for the resolved alert
+                    self.alert_resolved.emit(device_id)
+                    return True
+                else:
+                    self.logger.debug(f"No alerts found for device: {device_id}")
+                    return False
+        except Exception as e:
+            self.logger.error(f"Failed to delete alerts for device {device_id}: {e}")
             return False
     
     def get_all_alerts(self) -> List[Alert]:

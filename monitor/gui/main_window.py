@@ -14,8 +14,8 @@ from monitor.services.contact_db import ContactDatabase
 from monitor.log_setup import get_logger
 
 # UI Layout Constants
-_WINDOW_WIDTH = 600
-_WINDOW_HEIGHT = 700
+_WINDOW_WIDTH = 800
+_WINDOW_HEIGHT = 600
 _WINDOW_X = 100
 _WINDOW_Y = 100
 _CONTENT_MARGIN_PX = 12
@@ -24,7 +24,7 @@ _SIDEBAR_WIDTH = 200
 class MainWindow(QMainWindow):
     """Main application window with navigation sidebar and content area"""
 
-    def __init__(self, config_service: ConfigService) -> None:
+    def __init__(self, config_service: ConfigService, alert_db=None, contact_db=None, thread_manager=None) -> None:
         super().__init__()
         self.logger = get_logger("monitor.gui.main_window")
         self.logger.info("Initializing main window")
@@ -34,10 +34,20 @@ class MainWindow(QMainWindow):
         self._nav_bar: NavigationBar
         self._info_banner: InfoBanner
         self._config_service = config_service  # Injected dependency
+        self._thread_manager = thread_manager  # Optional thread manager for graceful shutdown
         
-        # Initialize databases early to avoid lazy loading delays
-        self._alert_db = AlertDatabase()
-        self._contact_db = ContactDatabase()
+        # Initialize databases (use injected ones or create new ones)
+        if alert_db is not None:
+            self._alert_db = alert_db
+        else:
+            from monitor.services.alert_db import AlertDatabase
+            self._alert_db = AlertDatabase()
+            
+        if contact_db is not None:
+            self._contact_db = contact_db
+        else:
+            from monitor.services.contact_db import ContactDatabase
+            self._contact_db = ContactDatabase()
         
         try:
             self._setup_window()
@@ -57,7 +67,7 @@ class MainWindow(QMainWindow):
         """Configure main window properties"""
         self.setWindowTitle("Monitor")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_WIDTH, _WINDOW_HEIGHT)
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(_WINDOW_WIDTH, _WINDOW_HEIGHT)
         self._setup_window_icon()
     
     def _setup_window_icon(self) -> None:
@@ -194,6 +204,26 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         """Handle application close event when user clicks the X button"""
         self.logger.info("User initiated application close via X button")
+        
+        # If we have a thread manager, stop threads gracefully
+        if self._thread_manager:
+            self.logger.info("Stopping worker threads...")
+            self._thread_manager.stop_threads()
+            
+            # Give threads a moment to stop gracefully
+            from PySide6.QtCore import QTimer
+            import time
+            start_time = time.time()
+            while self._thread_manager.is_running and (time.time() - start_time) < 3:
+                from PySide6.QtWidgets import QApplication
+                QApplication.processEvents()
+                time.sleep(0.1)
+            
+            if self._thread_manager.is_running:
+                self.logger.warning("Some threads did not stop gracefully within 3 seconds")
+            else:
+                self.logger.info("All worker threads stopped successfully")
+        
         self.logger.debug("Application is shutting down gracefully")
         
         # Accept the close event to allow the application to close
