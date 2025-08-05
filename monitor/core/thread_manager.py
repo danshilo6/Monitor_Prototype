@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from PySide6.QtCore import QThread, QObject, QTimer, Signal, Slot, QMetaObject, Qt
 from PySide6.QtWidgets import QApplication
-from monitor.core.log_processor import LogProcessor
 from monitor.core.decision_engine import DecisionEngine
 from monitor.services.alert_db import AlertDatabase
 from monitor.services.contact_db import ContactDatabase
@@ -23,21 +22,21 @@ from monitor.log_setup import get_logger
 
 class ThreadManager(QObject):
     """
-    Manages worker threads for the monitoring application.
+    Manages the monitoring system threading and timing.
     
-    Handles:
-    - Creating and starting LogProcessor and DecisionEngine threads
-    - Proper signal connections between components
-    - Graceful shutdown of all threads
-    - Error handling and recovery
+    This manager:
+    - Runs DecisionEngine in a separate thread
+    - Controls the monitoring cycle timing
+    - Handles thread lifecycle management
     """
     
     # Signals
     all_threads_started = Signal()
     all_threads_stopped = Signal()
     thread_error = Signal(str)  # Emits error message
+    cycle_completed = Signal(int)        # Forwards from DecisionEngine
     
-    def __init__(self, logs_directory: Path, data_directory: Path, alert_db: AlertDatabase, contact_db: ContactDatabase):
+    def __init__(self, logs_directory: Path, data_directory: Path, alert_db: AlertDatabase, contact_db: ContactDatabase, cycle_interval: float = 3.0):
         """
         Initialize the thread manager.
         
@@ -46,6 +45,7 @@ class ThreadManager(QObject):
             data_directory: Directory containing the data databases (devices, alerts, etc.)
             alert_db: Alert database instance for signal connections
             contact_db: Contact database instance for email notifications
+            cycle_interval: Time in seconds between monitoring cycles
         """
         super().__init__()
         self.logger = get_logger("monitor.core.thread_manager")
@@ -53,16 +53,15 @@ class ThreadManager(QObject):
         self.data_directory = data_directory
         self.alert_db = alert_db
         self.contact_db = contact_db
+        self.cycle_interval = cycle_interval
         
         # Create email service
         self.email_service = EmailService(self.contact_db)
         
         # Thread objects
-        self.log_processor_thread: Optional[QThread] = None
         self.decision_engine_thread: Optional[QThread] = None
         
         # Worker objects
-        self.log_processor: Optional[LogProcessor] = None
         self.decision_engine: Optional[DecisionEngine] = None
         
         # State tracking
@@ -74,57 +73,52 @@ class ThreadManager(QObject):
         self.shutdown_timer: Optional[QTimer] = None
         self.shutdown_timeout_seconds = 10
         
-        self.logger.info("ThreadManager initialized")
+        self.logger.info(f"ThreadManager initialized: cycle_interval={cycle_interval}s")
     
     def start_threads(self) -> bool:
         """
-        Start all worker threads.
+        Start the monitoring system.
         
         Returns:
-            bool: True if all threads started successfully, False otherwise
+            bool: True if started successfully, False otherwise
         """
         if self.is_running:
-            self.logger.warning("Threads are already running")
+            self.logger.warning("Monitoring system is already running")
             return True
         
         try:
-            self.logger.info("Starting worker threads...")
-            
-            # Create and start LogProcessor thread
-            if not self._start_log_processor_thread():
-                return False
+            self.logger.info("Starting monitoring system...")
             
             # Create and start DecisionEngine thread
             if not self._start_decision_engine_thread():
-                self._cleanup_log_processor_thread()
                 return False
             
             # Connect signals between components
             self._connect_component_signals()
             
             self.is_running = True
-            self.logger.info("All worker threads started successfully")
+            self.logger.info("Monitoring system started successfully")
             self.all_threads_started.emit()
             return True
             
         except Exception as e:
-            self.logger.error("Failed to start worker threads", exc_info=True)
-            self.thread_error.emit(f"Failed to start threads: {str(e)}")
+            self.logger.error("Failed to start monitoring system", exc_info=True)
+            self.thread_error.emit(f"Failed to start system: {str(e)}")
             self.stop_threads()
             return False
     
     def stop_threads(self, timeout_seconds: Optional[float] = None) -> bool:
         """
-        Stop all worker threads gracefully.
+        Stop the monitoring system gracefully.
         
         Args:
             timeout_seconds: Maximum time to wait for threads to stop
             
         Returns:
-            bool: True if all threads stopped gracefully, False if timeout occurred
+            bool: True if stopped gracefully, False if timeout occurred
         """
         if not self.is_running:
-            self.logger.debug("Threads are not running, nothing to stop")
+            self.logger.debug("Monitoring system is already stopped")
             return True
         
         if self.shutdown_requested:
@@ -137,69 +131,31 @@ class ThreadManager(QObject):
         if timeout_seconds is None:
             timeout_seconds = self.shutdown_timeout_seconds
         
-        self.logger.info(f"Stopping worker threads (timeout: {timeout_seconds}s)...")
+        self.logger.info(f"Stopping monitoring system (timeout: {timeout_seconds}s)...")
         
         try:
+            # Close database connections and services explicitly
+            self._close_resources()
+            
             # Start shutdown timeout timer
             self._start_shutdown_timer(timeout_seconds)
             
-            # Stop workers using queued connections to ensure they run on correct threads
-            if self.log_processor and self.log_processor_thread:
-                QMetaObject.invokeMethod(self.log_processor, "stop", 
-                                       Qt.ConnectionType.QueuedConnection)
-            
+            # Stop decision engine using queued connections to ensure it runs on correct thread
             if self.decision_engine and self.decision_engine_thread:
                 QMetaObject.invokeMethod(self.decision_engine, "stop", 
                                        Qt.ConnectionType.QueuedConnection)
             
             # If no threads were running, complete immediately
-            if not self.log_processor_thread and not self.decision_engine_thread:
+            if not self.decision_engine_thread:
                 self._on_all_threads_finished()
                 return True
             
             return True  # Will complete asynchronously
             
         except Exception as e:
-            self.logger.error("Error during thread shutdown", exc_info=True)
+            self.logger.error("Error during system shutdown", exc_info=True)
             self.thread_error.emit(f"Error during shutdown: {str(e)}")
             self._force_cleanup()
-            return False
-    
-    def _start_log_processor_thread(self) -> bool:
-        """Start the LogProcessor thread."""
-        try:
-            self.logger.debug("Creating LogProcessor thread...")
-            
-            # Create thread and worker
-            self.log_processor_thread = QThread()
-            self.log_processor = LogProcessor(
-                logs_directory=self.logs_directory,
-                data_directory=self.data_directory,
-                batch_interval=2.0
-            )
-            
-            # Move worker to thread
-            self.log_processor.moveToThread(self.log_processor_thread)
-            
-            # Connect thread lifecycle signals
-            self.log_processor_thread.started.connect(self.log_processor.start)
-            self.log_processor.finished.connect(self.log_processor_thread.quit)
-            self.log_processor.finished.connect(self._on_log_processor_finished)
-            # Note: Don't use deleteLater() here to avoid shutdown issues
-            
-            # Connect error handling
-            self.log_processor.error_occurred.connect(
-                lambda msg: self.thread_error.emit(f"LogProcessor error: {msg}")
-            )
-            
-            # Start thread
-            self.log_processor_thread.start()
-            self.logger.info("LogProcessor thread started")
-            return True
-            
-        except Exception as e:
-            self.logger.error("Failed to start LogProcessor thread", exc_info=True)
-            self._cleanup_log_processor_thread()
             return False
     
     def _start_decision_engine_thread(self) -> bool:
@@ -210,8 +166,9 @@ class ThreadManager(QObject):
             # Create thread and worker
             self.decision_engine_thread = QThread()
             self.decision_engine = DecisionEngine(
+                logs_directory=self.logs_directory,
                 data_directory=self.data_directory,
-                evaluation_interval=3.0
+                cycle_interval=self.cycle_interval
             )
             
             # Move worker to thread
@@ -236,6 +193,11 @@ class ThreadManager(QObject):
     def _connect_component_signals(self) -> None:
         """Connect signals between components."""
         try:
+            # Connect DecisionEngine cycle completed signal to ThreadManager
+            if self.decision_engine:
+                self.decision_engine.cycle_completed.connect(self.cycle_completed.emit)
+                self.logger.debug("Connected DecisionEngine -> ThreadManager cycle signals")
+            
             # Connect DecisionEngine alert signals to AlertDatabase
             if self.decision_engine and self.alert_db:
                 self.decision_engine.alert_creation_requested.connect(
@@ -262,19 +224,53 @@ class ThreadManager(QObject):
             self.logger.error("Failed to connect component signals", exc_info=True)
             raise
     
+    def _close_resources(self) -> None:
+        """Close all database connections and external resources."""
+        try:
+            self.logger.debug("Closing database connections and resources...")
+            
+            # Close AlertDatabase connections
+            if hasattr(self.alert_db, 'close') and callable(self.alert_db.close):
+                try:
+                    self.alert_db.close()
+                    self.logger.debug("AlertDatabase connections closed")
+                except Exception as e:
+                    self.logger.warning(f"Error closing AlertDatabase: {e}")
+            
+            # Close ContactDatabase connections  
+            if hasattr(self.contact_db, 'close') and callable(self.contact_db.close):
+                try:
+                    self.contact_db.close()
+                    self.logger.debug("ContactDatabase connections closed")
+                except Exception as e:
+                    self.logger.warning(f"Error closing ContactDatabase: {e}")
+            
+            # Close EmailService resources
+            if hasattr(self.email_service, 'close') and callable(self.email_service.close):
+                try:
+                    self.email_service.close()
+                    self.logger.debug("EmailService resources closed")
+                except Exception as e:
+                    self.logger.warning(f"Error closing EmailService: {e}")
+            
+            # Signal DecisionEngine to close its resources (LogProcessor, etc.)
+            if self.decision_engine:
+                try:
+                    QMetaObject.invokeMethod(self.decision_engine, "close_resources",
+                                           Qt.ConnectionType.QueuedConnection)
+                    self.logger.debug("Requested DecisionEngine to close resources")
+                except Exception as e:
+                    self.logger.warning(f"Error requesting DecisionEngine resource cleanup: {e}")
+                    
+        except Exception as e:
+            self.logger.error("Error during resource cleanup", exc_info=True)
+
     def _start_shutdown_timer(self, timeout_seconds: float) -> None:
         """Start the shutdown timeout timer."""
         self.shutdown_timer = QTimer()
         self.shutdown_timer.setSingleShot(True)
         self.shutdown_timer.timeout.connect(self._on_shutdown_timeout)
         self.shutdown_timer.start(int(timeout_seconds * 1000))
-    
-    @Slot()
-    def _on_log_processor_finished(self) -> None:
-        """Handle LogProcessor finished signal."""
-        self.logger.debug("LogProcessor finished")
-        self.threads_finished_count += 1
-        self._check_all_threads_finished()
     
     @Slot()
     def _on_decision_engine_finished(self) -> None:
@@ -286,8 +282,6 @@ class ThreadManager(QObject):
     def _check_all_threads_finished(self) -> None:
         """Check if all threads have finished and complete shutdown if so."""
         expected_threads = 0
-        if self.log_processor_thread:
-            expected_threads += 1
         if self.decision_engine_thread:
             expected_threads += 1
         
@@ -307,55 +301,42 @@ class ThreadManager(QObject):
             self.shutdown_timer = None
         
         # Wait for QThread.finished signals and cleanup
-        if self.log_processor_thread:
-            self.log_processor_thread.wait(2000)  # Wait up to 2 seconds
         if self.decision_engine_thread:
             self.decision_engine_thread.wait(2000)  # Wait up to 2 seconds
         
         self._cleanup_all()
-        self.logger.info("All worker threads stopped successfully")
+        self.logger.info("Monitoring system stopped successfully")
         self.all_threads_stopped.emit()
     
     def _force_cleanup(self) -> None:
         """Force cleanup of threads that didn't stop gracefully."""
-        self.logger.warning("Forcing thread cleanup...")
+        self.logger.warning("Forcing system cleanup...")
         
         if self.shutdown_timer:
             self.shutdown_timer.stop()
             self.shutdown_timer = None
         
-        # Terminate threads if they're still running
-        if self.log_processor_thread and self.log_processor_thread.isRunning():
-            self.log_processor_thread.terminate()
-            self.log_processor_thread.wait(1000)
+        # Close resources even during forced cleanup
+        try:
+            self._close_resources()
+        except Exception as e:
+            self.logger.error("Error during forced resource cleanup", exc_info=True)
         
+        # Terminate threads if they're still running
         if self.decision_engine_thread and self.decision_engine_thread.isRunning():
             self.decision_engine_thread.terminate()
             self.decision_engine_thread.wait(1000)
         
         self._cleanup_all()
-        self.logger.warning("Forced thread cleanup completed")
+        self.logger.warning("Forced system cleanup completed")
         self.all_threads_stopped.emit()
     
     def _cleanup_all(self) -> None:
         """Cleanup all thread resources."""
-        self._cleanup_log_processor_thread()
         self._cleanup_decision_engine_thread()
         self.is_running = False
         self.shutdown_requested = False
         self.threads_finished_count = 0
-    
-    def _cleanup_log_processor_thread(self) -> None:
-        """Cleanup LogProcessor thread resources."""
-        if self.log_processor_thread:
-            if self.log_processor_thread.isRunning():
-                self.log_processor_thread.quit()
-                if not self.log_processor_thread.wait(3000):  # Wait up to 3 seconds
-                    self.logger.warning("LogProcessor thread did not quit gracefully, terminating")
-                    self.log_processor_thread.terminate()
-                    self.log_processor_thread.wait(1000)
-            self.log_processor_thread = None
-        self.log_processor = None
     
     def _cleanup_decision_engine_thread(self) -> None:
         """Cleanup DecisionEngine thread resources."""
@@ -381,10 +362,25 @@ def setup_signal_handlers(thread_manager: ThreadManager) -> None:
     
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        
+        # Start shutdown process
         thread_manager.stop_threads()
         
-        # Give threads time to shutdown gracefully
-        QTimer.singleShot(thread_manager.shutdown_timeout_seconds * 1000 + 1000, 
+        # Create a timer to check if shutdown completed and quit the app
+        def check_shutdown():
+            if not thread_manager.is_running:
+                # Shutdown completed gracefully
+                logger.info("Graceful shutdown completed, exiting application")
+                QApplication.instance().quit()
+            else:
+                # Still shutting down, schedule another check
+                QTimer.singleShot(500, check_shutdown)
+        
+        # Start checking for shutdown completion immediately
+        QTimer.singleShot(100, check_shutdown)
+        
+        # Fallback: Force quit after timeout + extra buffer
+        QTimer.singleShot(thread_manager.shutdown_timeout_seconds * 1000 + 2000, 
                          lambda: QApplication.instance().quit())
     
     # Setup signal handlers for graceful shutdown

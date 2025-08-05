@@ -18,6 +18,7 @@ import psutil
 from datetime import datetime, timedelta
 from PySide6.QtCore import QObject, Slot, Signal, QTimer
 from monitor.log_setup import get_logger
+from monitor.core.log_processor import LogProcessor
 from monitor.services.devices_db import DevicesDatabase
 from monitor.services.config_service import ConfigService
 from monitor.services.devices_models import DeviceInfo, DeviceType
@@ -31,16 +32,19 @@ DEFAULT_CHECK_EINTZOFIA_RUNNING_ENABLED = True  # Check if EinTzofia is running 
 
 class DecisionEngine(QObject):
     """
-    Decision engine that processes device status changes and makes automated decisions.
+    Decision engine that orchestrates the monitoring cycle.
     
-    This engine focuses on:
-    - Monitoring device status changes from the LogProcessor
-    - Making automated decisions based on device states
+    This engine:
+    - Controls when log processing occurs (via LogProcessor)
+    - Makes decisions based on device status changes
     - Designed to run on a separate thread for optimal performance
     """
     
     # Signal to indicate the engine has finished (for thread cleanup)
     finished = Signal()
+    
+    # Signals for cycle completion and monitoring
+    cycle_completed = Signal(int)        # Emits count of processed logs per cycle
     
     # Signals for alert management (to be connected to alert database)
     alert_creation_requested = Signal(Alert)  # Emits Alert object when device fails
@@ -50,23 +54,32 @@ class DecisionEngine(QObject):
     device_failure_notification_requested = Signal(object)  # Emits DeviceInfo
     device_recovery_notification_requested = Signal(object)  # Emits DeviceInfo
     
-    def __init__(self, data_directory: Path, evaluation_interval: int = 7):
+    def __init__(self, logs_directory: Path, data_directory: Path, cycle_interval: float = 3.0):
         """
         Initialize the decision engine.
         
         Args:
+            logs_directory: Directory containing the log database files
             data_directory: Directory containing the devices database
-            evaluation_interval: Interval in seconds for device evaluation (default: 60)
+            cycle_interval: Time in seconds between monitoring cycles
         """
         super().__init__()
         self.logger = get_logger("monitor.core.decision_engine")
         
         # Configuration
+        self.logs_directory = logs_directory
         self.data_directory = data_directory
+        self.cycle_interval = cycle_interval
         
         # State
         self._running = False
         self._start_time = None  # Track when the decision engine started
+        
+        # Timer for monitoring cycles (will be created when started)
+        self._cycle_timer = None
+        
+        # Initialize log processor (no timer - controlled by this engine)
+        self.log_processor = LogProcessor(logs_directory, data_directory)
         
         # Device failure thresholds and system settings (loaded from config)
         self.relay_fail_threshold = DEFAULT_RELAY_FAIL  # For fan and relay-controlled devices
@@ -86,9 +99,6 @@ class DecisionEngine(QObject):
         
         # Note: Alert database connection will be handled via signals
         
-        # Timer for periodic device evaluation (will be created when started)
-        self._evaluation_timer = None
-        self._evaluation_interval = evaluation_interval
         self.logger.info("DecisionEngine initialized")
     
     @staticmethod
@@ -187,7 +197,7 @@ class DecisionEngine(QObject):
     
     @Slot()
     def start(self) -> None:
-        """Start the decision engine."""
+        """Start the decision engine with its own timer."""
         if self._running:
             self.logger.warning("DecisionEngine is already running")
             return
@@ -195,18 +205,21 @@ class DecisionEngine(QObject):
         # Record start time
         self._start_time = datetime.now()
         
-        # Create timer on the current thread (worker thread)
-        if self._evaluation_timer is None:
-            self._evaluation_timer = QTimer()
-            self._evaluation_timer.timeout.connect(self._evaluate_devices)
-            self._evaluation_timer.setInterval(self._evaluation_interval * 1000)  # Convert seconds to milliseconds
-        
         # Load config thresholds once at startup
         self._load_config_thresholds()
         
+        # Start the log processor (no timer needed)
+        self.log_processor.start()
+        
+        # Create timer on current thread (worker thread)
+        self._cycle_timer = QTimer()
+        self._cycle_timer.timeout.connect(self.run_cycle)
+        self._cycle_timer.setInterval(int(self.cycle_interval * 1000))  # Convert to milliseconds
+        
         self._running = True
-        self._evaluation_timer.start()
-        self.logger.info(f"DecisionEngine started with {self._evaluation_interval}-second evaluation timer at {self._start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self._cycle_timer.start()
+        
+        self.logger.info(f"DecisionEngine started with {self.cycle_interval}s cycle at {self._start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     
     @Slot()
     def stop(self) -> None:
@@ -218,19 +231,73 @@ class DecisionEngine(QObject):
         self._running = False
         self._start_time = None  # Reset start time
         
-        # Stop timer if it exists (must be done from the same thread that created it)
-        if self._evaluation_timer is not None:
-            self._evaluation_timer.stop()
-            self._evaluation_timer.deleteLater()
-            self._evaluation_timer = None
+        # Stop and cleanup timer
+        if self._cycle_timer is not None:
+            self._cycle_timer.stop()
+            self._cycle_timer.deleteLater()
+            self._cycle_timer = None
+        
+        # Close log processor
+        self.log_processor.stop()
         
         self.devices_db.close()
         self.logger.info("DecisionEngine stopped")
         self.finished.emit()  # Emit finished signal for thread cleanup
     
+    @Slot()
+    def close_resources(self) -> None:
+        """Close all database connections and resources without stopping the engine."""
+        try:
+            self.logger.debug("Closing DecisionEngine resources...")
+            
+            # Close log processor connections
+            if hasattr(self.log_processor, 'stop'):
+                self.log_processor.stop()
+                self.logger.debug("LogProcessor resources closed")
+            
+            # Close devices database connections
+            if hasattr(self.devices_db, 'close'):
+                self.devices_db.close()
+                self.logger.debug("DevicesDatabase connections closed")
+                
+        except Exception as e:
+            self.logger.error("Error closing DecisionEngine resources", exc_info=True)
+    
     def is_running(self) -> bool:
         """Check if the engine is currently running."""
         return self._running
+    
+    @Slot()
+    def run_cycle(self) -> None:
+        """
+        Run one monitoring cycle.
+        
+        This method processes logs first, then evaluates devices sequentially.
+        Called by the ThreadManager's timer.
+        """
+        if not self._running:
+            self.logger.warning("DecisionEngine is not running, cannot run cycle")
+            return
+        
+        self.logger.debug("Running monitoring cycle")
+        
+        # Step 1: Process new logs
+        try:
+            processed_count = self.log_processor.process_batch()
+            self.logger.debug(f"Processed {processed_count} logs")
+        except Exception as e:
+            self.logger.error(f"Log processor error: {e}")
+            processed_count = 0
+        
+        # Step 2: Evaluate devices and make decisions
+        try:
+            self._evaluate_devices()
+            self.logger.debug("Device evaluation completed")
+        except Exception as e:
+            self.logger.error(f"Device evaluation error: {e}")
+        
+        # Emit completion signal
+        self.cycle_completed.emit(processed_count)
     
     def _evaluate_devices(self) -> None:
         """Evaluate all devices and make decisions (called by timer)."""
@@ -632,7 +699,7 @@ def main():
         if 'decision_engine' in locals():
             decision_engine.stop()
         if 'log_processor' in locals():
-            log_processor.stop()
+            log_processor.close()
         
         # Wait for threads to finish
         if 'decision_thread' in locals() and decision_thread.isRunning():

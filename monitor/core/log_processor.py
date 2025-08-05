@@ -1,13 +1,14 @@
 """
 Log Processor
 
-Simple log processor that reads new log entries and emits Qt signals to a DecisionEngine.
+Simple log processor that reads new log entries and processes them synchronously.
 
 Main functionality:
 - Reads new log entries from the logs database
-- Emits Qt signals when new data is available
-- Designed to be moved to a thread by the main application
-- Minimal processing - focuses on data reading and signaling
+- Updates device status tracking in the database  
+- Designed to be controlled by DecisionEngine (no internal timer)
+- Pure Python class with no Qt dependencies
+- Minimal processing - focuses on data reading and device updates
 """
 
 import time
@@ -15,49 +16,35 @@ import re
 from pathlib import Path
 import pandas as pd
 from dataclasses import replace
-from PySide6.QtCore import QObject, Signal, QTimer, Slot
 from monitor.core.log_reader import LogReader
 from monitor.log_setup import get_logger
 from monitor.services.devices_models import DeviceType, DeviceInfo
 from monitor.services.devices_db import DevicesDatabase
 
 
-class LogProcessor(QObject):
+class LogProcessor:
     """
     Device status processor that reads logs and maintains device state tracking.
     
-    This processor focuses on:
-    - Reading new log entries efficiently
-    - Updating device status tracking in the database
-    - Designed to be moved to a thread by the application
-    - Minimal processing overhead
+    Pure Python class - no Qt dependencies.
+    Designed to be called synchronously by DecisionEngine.
     """
-    
-    # Qt Signals
-    new_logs_processed = Signal(int)     # Emits when new logs are found and processed (with count)
-    no_logs_found = Signal()             # Emits when no new logs are found in this batch
-    error_occurred = Signal(str)         # Emits error message
-    finished = Signal()                  # Emits when processor has finished cleanup (for thread cleanup)
     
     def __init__(self, 
                  logs_directory: Path,
-                 data_directory: Path,
-                 batch_interval: float = 2.0):
+                 data_directory: Path):
         """
         Initialize the log processor.
         
         Args:
             logs_directory: Directory containing the log database files
             data_directory: Directory containing the devices database
-            batch_interval: Time in seconds between batch processing cycles
         """
-        super().__init__()
         self.logger = get_logger("monitor.core.log_processor")
         
         # Configuration
         self.logs_directory = logs_directory
         self.data_directory = data_directory
-        self.batch_interval = batch_interval
         
         # State
         self._running = False
@@ -75,33 +62,21 @@ class LogProcessor(QObject):
             {'id': 'system_health', 'type': DeviceType.SYSTEM_HEALTH}
         ]
         
-        # Timer for batch processing (will be created when started)
-        self._batch_timer = None
-        
-        self.logger.info(f"LogProcessor initialized: interval={batch_interval}s")
+        self.logger.info("LogProcessor initialized")
     
-    @Slot()
     def start(self) -> None:
-        """Start the log processor batch processing."""
+        """Start the log processor (no timer - controlled by DecisionEngine)."""
         if self._running:
             self.logger.warning("LogProcessor is already running")
             return
-        
-        # Create timer on the current thread (worker thread)
-        if self._batch_timer is None:
-            self._batch_timer = QTimer()
-            self._batch_timer.timeout.connect(self._process_batch)
-            self._batch_timer.setInterval(int(self.batch_interval * 1000))  # Convert to milliseconds
         
         self._running = True
         
         # Ensure expected threads exist in database (one-time setup)
         self._ensure_expected_threads_exist()
         
-        self._batch_timer.start()
         self.logger.info("LogProcessor started")
     
-    @Slot()
     def stop(self) -> None:
         """Stop the log processor."""
         if not self._running:
@@ -110,16 +85,9 @@ class LogProcessor(QObject):
         self.logger.info("Stopping LogProcessor...")
         self._running = False
         
-        # Stop timer if it exists (must be done from the same thread that created it)
-        if self._batch_timer is not None:
-            self._batch_timer.stop()
-            self._batch_timer.deleteLater()
-            self._batch_timer = None
-        
         self.log_reader.close()
         self.devices_db.close()
         self.logger.info("LogProcessor stopped")
-        self.finished.emit()  # Emit finished signal for thread cleanup
     
     def is_running(self) -> bool:
         """Check if the processor is currently running."""
@@ -282,11 +250,11 @@ class LogProcessor(QObject):
         unique_devices = new_logs['device'].dropna().unique()
         return sorted(unique_devices)
     
-    def _process_batch(self) -> None:
-        """Read all new logs and update device statuses accordingly."""
+    def process_batch(self) -> int:
+        """Process one batch of logs and return count (called by DecisionEngine)."""
         # Check if processor is still running before processing
         if not self._running:
-            return
+            return 0
             
         try:
             # Step 1: Read all new logs (no limit)
@@ -295,8 +263,7 @@ class LogProcessor(QObject):
             if new_logs.empty:
                 # No new logs found - debug log this
                 self.logger.debug("No new log entries found in this batch")
-                self.no_logs_found.emit()
-                return
+                return 0
             
             self.logger.debug(f"Found {len(new_logs)} new log entries to process")
             
@@ -344,49 +311,46 @@ class LogProcessor(QObject):
             
             self.logger.debug(f"Processed {processed_count} log entries, updated {success_count} devices in database")
             
-            # Emit new logs processed signal with count
-            self.new_logs_processed.emit(len(new_logs))
+            return len(new_logs)  # Return count of processed logs
                 
         except Exception as e:
             error_msg = f"Error processing log batch: {e}"
             self.logger.error(error_msg)
-            self.error_occurred.emit(error_msg)
+            return 0
 
 
 def main():
     """Simple main function for testing the log processor."""
     import sys
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtCore import QThread
+    from PySide6.QtCore import QTimer
     
-    def on_new_logs_processed(count: int):
-        print(f"Processed {count} new log entries")
-    
-    def on_no_logs_found():
-        print("No new logs found in this batch")
-    
-    def on_error(error_msg: str):
-        print(f"Error: {error_msg}")
+    def test_log_processing():
+        """Test function that processes logs and prints results."""
+        logs_count = processor.process_batch()
+        if logs_count > 0:
+            print(f"Processed {logs_count} new log entries")
+        else:
+            print("No new logs found in this batch")
     
     app = QApplication(sys.argv)
     
     try:
         # Use current working directory for testing
-        db_directory = Path.cwd()
-        processor = LogProcessor(
-            db_directory=db_directory,
-            batch_interval=2.0
-        )
-        
-        # Connect signals
-        processor.new_logs_processed.connect(on_new_logs_processed)
-        processor.no_logs_found.connect(on_no_logs_found)
-        processor.error_occurred.connect(on_error)
+        logs_directory = Path.cwd()
+        data_directory = Path.cwd()
+        processor = LogProcessor(logs_directory, data_directory)
         
         print("Starting LogProcessor...")
         print("Press Ctrl+C to stop")
         
         processor.start()
+        
+        # Create a timer to manually call process_batch for testing
+        test_timer = QTimer()
+        test_timer.timeout.connect(test_log_processing)
+        test_timer.setInterval(2000)  # 2 seconds
+        test_timer.start()
         
         # Run the Qt event loop
         sys.exit(app.exec_())
