@@ -7,6 +7,7 @@ class BasePage(QWidget):
     
     def __init__(self):
         super().__init__()
+        self._signals_connected = []  # Track connected signals for cleanup
         self.setup_ui()
         self.connect_signals()
     
@@ -28,4 +29,14 @@ class BasePage(QWidget):
     
     def cleanup(self):
         """Clean up resources when page is destroyed (optional override)"""
-        pass
+        # Disconnect any tracked signals
+        for signal, slot in self._signals_connected:
+            try:
+                signal.disconnect(slot)
+            except Exception:
+                pass  # Signal may already be disconnected
+        self._signals_connected.clear()
+    
+    def track_signal_connection(self, signal, slot):
+        """Track a signal connection for later cleanup"""
+        self._signals_connected.append((signal, slot))

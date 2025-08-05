@@ -74,15 +74,21 @@ class IconButtonDelegate(QStyledItemDelegate):
                 
                 if self._hovered_row != new_hover_row:
                     self._hovered_row = new_hover_row
-                    if hasattr(self.parent(), 'viewport'):
-                        self.parent().viewport().update()
+                    # Check if parent exists and has viewport before updating
+                    if hasattr(self, 'parent') and callable(self.parent) and self.parent():
+                        parent_widget = self.parent()
+                        if hasattr(parent_widget, 'viewport') and parent_widget.viewport():
+                            parent_widget.viewport().update()
                 return True
         else:
             # Clear hover when mouse leaves target column
             if self._hovered_row is not None:
                 self._hovered_row = None
-                if hasattr(self.parent(), 'viewport'):
-                    self.parent().viewport().update()
+                # Check if parent exists and has viewport before updating
+                if hasattr(self, 'parent') and callable(self.parent) and self.parent():
+                    parent_widget = self.parent()
+                    if hasattr(parent_widget, 'viewport') and parent_widget.viewport():
+                        parent_widget.viewport().update()
         
         return super().editorEvent(event, model, option, index)
     
@@ -90,8 +96,11 @@ class IconButtonDelegate(QStyledItemDelegate):
         """Clear hover state (useful when mouse leaves table or data changes)"""
         if self._hovered_row is not None:
             self._hovered_row = None
-            if hasattr(self.parent(), 'viewport'):
-                self.parent().viewport().update()
+            # Check if parent still exists and has viewport before updating
+            if hasattr(self, 'parent') and callable(self.parent) and self.parent():
+                parent_widget = self.parent()
+                if hasattr(parent_widget, 'viewport') and parent_widget.viewport():
+                    parent_widget.viewport().update()
     
     def reset_hover_state(self):
         """Reset hover state - alias for clear_hover for clarity"""

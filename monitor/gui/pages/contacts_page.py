@@ -252,6 +252,22 @@ class ContactsPage(BasePage):
         """Return the page description"""
         return "Manage email and phone contacts for emergency notifications"
     
+    def cleanup(self):
+        """Clean up resources when page is destroyed"""
+        super().cleanup()  # Call base class cleanup
+        
+        # Clear delegate hover states to prevent stale references
+        if hasattr(self, '_email_delegate'):
+            self._email_delegate.clear_hover()
+        if hasattr(self, '_phone_delegate'):
+            self._phone_delegate.clear_hover()
+        
+        # Clear models to prevent memory leaks
+        if hasattr(self, '_email_model'):
+            self._email_model.clear()
+        if hasattr(self, '_phone_model'):
+            self._phone_model.clear()
+    
     def _validate_email(self, email: str) -> bool:
         """Validate email address format"""
         # Basic email regex pattern

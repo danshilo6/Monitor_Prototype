@@ -65,3 +65,11 @@ class SettingsPage(BasePage):
     def get_description(self) -> str:
         """Return the page description"""
         return "Configure application preferences and advanced options"
+    
+    def cleanup(self):
+        """Clean up resources when page is destroyed"""
+        super().cleanup()  # Call base class cleanup
+        
+        # No specific cleanup needed for settings tabs as they are properly
+        # managed by the QTabWidget, but we could add any future cleanup here
+        pass

@@ -241,7 +241,20 @@ class MainWindow(QMainWindow):
         for i in reversed(range(self._content_layout.count())):
             child = self._content_layout.itemAt(i).widget()
             if child:
-                child.setParent(None)
+                # Call cleanup method if page has one
+                if hasattr(child, 'cleanup') and callable(child.cleanup):
+                    try:
+                        child.cleanup()
+                        self.logger.debug(f"Called cleanup for page widget: {type(child).__name__}")
+                    except Exception as e:
+                        self.logger.warning(f"Error during page cleanup: {e}")
+                
+                # Properly remove from layout first
+                self._content_layout.removeWidget(child)
+                
+                # Schedule for deletion instead of just removing parent
+                child.deleteLater()
+                self.logger.debug(f"Scheduled page widget for deletion: {type(child).__name__}")
 
     def _update_content(self, page_name: str) -> None:
         """Update content area based on selected page"""

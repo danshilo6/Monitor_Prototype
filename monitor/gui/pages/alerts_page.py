@@ -85,9 +85,18 @@ class AlertsPage(BasePage):
         alert_db.alert_resolved.connect(self.alert_model.remove_alert_by_id)
         alert_db.alerts_loaded.connect(self.alert_model.set_alerts)
         
+        # Track these connections for cleanup
+        self.track_signal_connection(alert_db.alert_added, self.alert_model.add_alert)
+        self.track_signal_connection(alert_db.alert_resolved, self.alert_model.remove_alert_by_id)
+        self.track_signal_connection(alert_db.alerts_loaded, self.alert_model.set_alerts)
+        
         # Connect page signals to database
         self.alert_removal_requested.connect(alert_db.resolve_alert)
         self.initial_load_requested.connect(alert_db.load_alerts)
+        
+        # Track these connections too
+        self.track_signal_connection(self.alert_removal_requested, alert_db.resolve_alert)
+        self.track_signal_connection(self.initial_load_requested, alert_db.load_alerts)
         
         # Now that signals are connected, request initial data load
         self.initial_load_requested.emit()
@@ -116,5 +125,17 @@ class AlertsPage(BasePage):
     
     def cleanup(self):
         """Clean up resources when page is destroyed"""
-        # Clean up any resources if needed
-        pass
+        super().cleanup()  # Call base class cleanup
+        
+        # Clear delegate hover state
+        if hasattr(self, 'button_delegate'):
+            self.button_delegate.clear_hover()
+        
+        # Clear model data
+        if hasattr(self, 'alert_model'):
+            self.alert_model.clear()
+        
+        # Reset table mouse tracking to prevent stale event handlers
+        if hasattr(self, 'alert_view'):
+            self.alert_view.setMouseTracking(False)
+            self.alert_view.viewport().setMouseTracking(False)
