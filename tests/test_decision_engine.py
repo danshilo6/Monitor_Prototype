@@ -251,8 +251,8 @@ class TestDeviceEvaluation:
         result = decision_engine._evaluate_camera_device(device)
         assert result == "success"  # Low failure rate should be success
     
-    def test_evaluate_device_unknown_type(self, decision_engine):
-        """Test evaluation of unknown device type"""
+    def test_determine_device_status_unknown_type(self, decision_engine):
+        """Test determination of unknown device type status"""
         device = DeviceInfo(
             device_id="test_unknown",
             device_type="unknown_type",
@@ -265,8 +265,50 @@ class TestDeviceEvaluation:
             last_updated=datetime.now()
         )
         
-        result = decision_engine._evaluate_device(device)
+        result = decision_engine._determine_device_status(device)
         assert result is None  # Unknown device type
+    
+    def test_evaluate_and_process_device_success(self, decision_engine):
+        """Test evaluate_and_process_device with successful device"""
+        device = DeviceInfo(
+            device_id="test_device",
+            device_type=DeviceType.FAN.value,
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
+            success_count=10,
+            fail_count=0,
+            recent_pattern="SSSSSSSSSS",
+            last_updated=datetime.now()
+        )
+        
+        with patch.object(decision_engine, '_determine_device_status', return_value="success") as mock_determine:
+            with patch.object(decision_engine, '_process_device_evaluation') as mock_process:
+                decision_engine._evaluate_and_process_device(device)
+                
+                mock_determine.assert_called_once_with(device)
+                mock_process.assert_called_once_with(device, "success")
+    
+    def test_evaluate_and_process_device_no_evaluation_logic(self, decision_engine):
+        """Test evaluate_and_process_device with device that has no evaluation logic"""
+        device = DeviceInfo(
+            device_id="test_device",
+            device_type="unknown_type",
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
+            success_count=10,
+            fail_count=0,
+            recent_pattern="SSSSSSSSSS",
+            last_updated=datetime.now()
+        )
+        
+        with patch.object(decision_engine, '_determine_device_status', return_value=None) as mock_determine:
+            with patch.object(decision_engine, '_process_device_evaluation') as mock_process:
+                decision_engine._evaluate_and_process_device(device)
+                
+                mock_determine.assert_called_once_with(device)
+                mock_process.assert_not_called()  # Should not process if no evaluation logic
 
 
 class TestDeviceStatusTracking:
@@ -335,8 +377,8 @@ class TestDeviceStatusTracking:
         # Device should now be tracked with 'success' status
         assert decision_engine._get_device_status("new_device") == "success"
     
-    def test_handle_status_change_no_change(self, decision_engine):
-        """Test handling status when no change occurs"""
+    def test_process_device_evaluation_no_change(self, decision_engine):
+        """Test processing device evaluation when no change occurs"""
         device = DeviceInfo(
             device_id="test_device",
             device_type=DeviceType.FAN.value,
@@ -353,11 +395,11 @@ class TestDeviceStatusTracking:
         decision_engine._update_device_status("test_device", "success", "fan", datetime.now())
         
         with patch.object(decision_engine.logger, 'debug') as mock_debug:
-            decision_engine._handle_status_change(device, "success")
+            decision_engine._process_device_evaluation(device, "success")
             mock_debug.assert_called_with("Device test_device status unchanged: success")
     
-    def test_handle_status_change_to_fail(self, decision_engine):
-        """Test handling status change to fail"""
+    def test_process_device_evaluation_to_fail(self, decision_engine):
+        """Test processing device evaluation change to fail"""
         device = DeviceInfo(
             device_id="test_device",
             device_type=DeviceType.FAN.value,
@@ -374,13 +416,13 @@ class TestDeviceStatusTracking:
         decision_engine._update_device_status("test_device", "success", "fan", datetime.now())
         
         with patch.object(decision_engine.logger, 'warning') as mock_warning:
-            decision_engine._handle_status_change(device, "fail")
+            decision_engine._process_device_evaluation(device, "fail")
             mock_warning.assert_called_with("DEVICE FAILED - test_device")
         
         assert decision_engine._get_device_status("test_device") == "fail"
     
-    def test_handle_status_change_to_success(self, decision_engine):
-        """Test handling status change to success (recovery)"""
+    def test_process_device_evaluation_to_success(self, decision_engine):
+        """Test processing device evaluation change to success (recovery)"""
         device = DeviceInfo(
             device_id="test_device",
             device_type=DeviceType.FAN.value,
@@ -397,7 +439,7 @@ class TestDeviceStatusTracking:
         decision_engine._update_device_status("test_device", "fail", "fan", datetime.now())
         
         with patch.object(decision_engine.logger, 'info') as mock_info:
-            decision_engine._handle_status_change(device, "success")
+            decision_engine._process_device_evaluation(device, "success")
             mock_info.assert_called_with("DEVICE RECOVERED - test_device")
         
         assert decision_engine._get_device_status("test_device") == "success"
@@ -487,12 +529,12 @@ class TestTimerBasedOperation:
         devices["camera_device"].get_failure_rate = Mock(return_value=0.33)
         
         with patch.object(decision_engine.devices_db, 'get_all', return_value=devices):
-            with patch.object(decision_engine, '_handle_status_change') as mock_handle:
+            with patch.object(decision_engine, '_process_device_evaluation') as mock_process:
                 with patch.object(decision_engine, '_ensure_device_tracked') as mock_ensure:
                     decision_engine._evaluate_devices()
                     
-                    # Should handle status changes for all three devices with evaluations
-                    assert mock_handle.call_count == 3, f"Expected 3 calls, got {mock_handle.call_count}"
+                    # Should process evaluation results for all three devices with evaluations
+                    assert mock_process.call_count == 3, f"Expected 3 calls, got {mock_process.call_count}"
                     
                     # All devices should be tracked (this ensures baseline tracking)
                     assert mock_ensure.call_count == 3, f"Expected 3 calls to ensure_tracked, got {mock_ensure.call_count}"

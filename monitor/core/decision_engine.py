@@ -23,12 +23,16 @@ from monitor.services.devices_db import DevicesDatabase
 from monitor.services.config_service import ConfigService
 from monitor.services.devices_models import DeviceInfo, DeviceType
 from monitor.services.alert_models import Alert, AlertType
+from monitor.core.evaluators.consecutive_count_evaluator import ConsecutiveCountEvaluator
+from monitor.core.evaluators.timeout_evaluator import TimeoutEvaluator
+from monitor.core.evaluators.failure_rate_evaluator import FailureRateEvaluator
+from monitor.core.evaluators.restart_evaluator import RestartEvaluator
 
 DEFAULT_RELAY_FAIL = 200  # Used for fan devices and similar relay-controlled equipment
 DEFAULT_CAMERA_FAIL = 0.6
 DEFAULT_RESTART = 5
-DEFAULT_RESTART_COOLDOWN = 30  # Minimum minutes between restarts
-DEFAULT_CHECK_EINTZOFIA_RUNNING_ENABLED = True  # Check if EinTzofia is running before restart
+DEFAULT_RESTART_COOLDOWN = 30  # Minimum minutes between computer restarts
+DEFAULT_CHECK_EINTZOFIA_RUNNING = True  # Whether to check if Ein Tzofia is running before restart
 
 class DecisionEngine(QObject):
     """
@@ -83,7 +87,7 @@ class DecisionEngine(QObject):
         self.camera_fail_threshold = DEFAULT_CAMERA_FAIL
         self.minutes_to_restart = DEFAULT_RESTART
         self.restart_cooldown_minutes = DEFAULT_RESTART_COOLDOWN
-        self.check_eintzofia_running_enabled = DEFAULT_CHECK_EINTZOFIA_RUNNING_ENABLED
+        self.check_eintzofia_running_enabled = DEFAULT_CHECK_EINTZOFIA_RUNNING  # Whether to check if Ein Tzofia is running before restart
         
         # Device status tracking (persistent)
         self._device_statuses = {}  # {device_id: {'status': str, 'timestamp': str, 'type': str}}
@@ -96,6 +100,12 @@ class DecisionEngine(QObject):
         
         # Initialize log processor with shared database (no timer - controlled by this engine)
         self.log_processor = LogProcessor(logs_directory, data_directory, self.devices_db)
+        
+        # Initialize evaluators (will be set up in start() method)
+        self.consecutive_count_evaluator = None
+        self.timeout_evaluator = None
+        self.failure_rate_evaluator = None
+        self.restart_evaluator = None
         
         # Note: Alert database connection will be handled via signals
         
@@ -183,13 +193,9 @@ class DecisionEngine(QObject):
             # Load system restart setting
             self.minutes_to_restart = int(config.get("system", "minutes_to_restart", DEFAULT_RESTART))
             self.restart_cooldown_minutes = int(config.get("system", "restart_cooldown_minutes", DEFAULT_RESTART_COOLDOWN))
-            self.check_eintzofia_running_enabled = config.get("system", "check_eintzofia_running", DEFAULT_CHECK_EINTZOFIA_RUNNING_ENABLED) in [True, "true", "True", "1", 1]
+            self.check_eintzofia_running_enabled = config.get("system", "check_eintzofia_running", DEFAULT_CHECK_EINTZOFIA_RUNNING)
             
-            self.logger.info(f"Loaded config: relay_fail={self.relay_fail_threshold}, "
-                           f"camera_fail={self.camera_fail_threshold}, "
-                           f"restart_time={self.minutes_to_restart} minutes, "
-                           f"restart_cooldown={self.restart_cooldown_minutes} minutes, "
-                           f"check_eintzofia_running_enabled={self.check_eintzofia_running_enabled}")
+            self.logger.info("Loaded Config")
             
         except Exception as e:
             self.logger.warning(f"Failed to load config, using defaults: {e}")
@@ -207,6 +213,20 @@ class DecisionEngine(QObject):
         
         # Load config thresholds once at startup
         self._load_config_thresholds()
+        
+        # Initialize evaluators with loaded config
+        self.consecutive_count_evaluator = ConsecutiveCountEvaluator(
+            self.logger, self.relay_fail_threshold
+        )
+        self.timeout_evaluator = TimeoutEvaluator(
+            self.logger, self.minutes_to_restart
+        )
+        self.failure_rate_evaluator = FailureRateEvaluator(
+            self.logger, self.camera_fail_threshold
+        )
+        self.restart_evaluator = RestartEvaluator(
+            self.logger, self.minutes_to_restart, self.restart_cooldown_minutes
+        )
         
         # Start the log processor (no timer needed)
         self.log_processor.start()
@@ -273,7 +293,6 @@ class DecisionEngine(QObject):
         Run one monitoring cycle.
         
         This method processes logs first, then evaluates devices sequentially.
-        Called by the ThreadManager's timer.
         """
         if not self._running:
             self.logger.warning("DecisionEngine is not running, cannot run cycle")
@@ -296,6 +315,13 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.error(f"Device evaluation error: {e}")
         
+        # Step 3: Evaluate restart conditions
+        try:
+            self._evaluate_restart_conditions()
+            self.logger.debug("Restart evaluation completed")
+        except Exception as e:
+            self.logger.error(f"Restart evaluation error: {e}")
+        
         # Emit completion signal
         self.cycle_completed.emit(processed_count)
     
@@ -305,49 +331,38 @@ class DecisionEngine(QObject):
             return
         
         try:
-            # Check if EinTzofia is running (if check is enabled) - independent of restart logic
-            if self.check_eintzofia_running_enabled:
-                if not self._is_eintzofia_running():
-                    self.logger.warning("EinTzofia is not running!")
-                    print("\nEin Tzofia:  Closed\n")
-                else:
-                    self.logger.debug("EinTzofia is running normally")
-                    print("\nEin Tzofia:  RUNNING\n")
             # Get all current device statuses from the database
             devices = self.devices_db.get_all()
             self.logger.debug(f"Evaluating {len(devices)} devices")
             
-            # Evaluate each device for decision logic
+            # Evaluate each device and process the result
             for device_id, device_info in devices.items():
                 self._ensure_device_tracked(device_info) # Adds the device to the json file
-                new_status = self._evaluate_device(device_info)
-                if new_status is not None:
-                    self._handle_status_change(device_info, new_status)
+                self._evaluate_and_process_device(device_info)
             
         except Exception as e:
             self.logger.error(f"Error evaluating devices: {e}")
     
-    def _is_relay_device(self, device_type: str) -> bool:
-        relay_types = [
-            DeviceType.FAN.value,
-            DeviceType.SPRINKLER.value, 
-            DeviceType.GROUP.value,
-            DeviceType.COMPORT.value,
-            DeviceType.THI.value,
-        ]
-        return device_type in relay_types
-
-    def _is_thread_device(self, device_type: str) -> bool:
-        thread_types = [
-            DeviceType.THREAD.value,
-            DeviceType.DEVICE_MODE_THREAD.value,
-            DeviceType.SYSTEM_HEALTH.value
-        ]
-        return device_type in thread_types
-
-    def _evaluate_device(self, device: DeviceInfo) -> str:
+    def _evaluate_and_process_device(self, device: DeviceInfo) -> None:
         """
-        Evaluate a single device and return the new status.
+        Evaluate a device and take appropriate actions based on the result.
+        
+        This method:
+        1. Determines device status using appropriate evaluator
+        2. Takes actions (alerts, notifications) based on that status
+        3. Updates persistent storage
+        """
+        # Step 1: Determine device status
+        new_status = self._determine_device_status(device)
+        if new_status is None:
+            return  # No evaluation logic for this device type
+        
+        # Step 2: Process the evaluation result and take actions
+        self._process_device_evaluation(device, new_status)
+    
+    def _determine_device_status(self, device: DeviceInfo) -> str:
+        """
+        Determine device status using the appropriate evaluator.
         
         Args:
             device: DeviceInfo instance to evaluate
@@ -357,172 +372,109 @@ class DecisionEngine(QObject):
         """
         device_type = device.device_type.lower()
         
-        # Handle relay-controlled devices
-        if self._is_relay_device(device_type):
-            return self._evaluate_relay_device(device)
-        # Handle thread-based devices
-        elif self._is_thread_device(device_type):
-            return self._evaluate_thread_device(device)
+        # Map device types to evaluation logic
+        if device_type in [DeviceType.FAN.value, DeviceType.SPRINKLER.value, 
+                          DeviceType.GROUP.value, DeviceType.COMPORT.value, 
+                          DeviceType.THI.value]:
+            return self.consecutive_count_evaluator.evaluate(device)
+            
+        elif device_type in [DeviceType.THREAD.value, DeviceType.DEVICE_MODE_THREAD.value, 
+                            DeviceType.SYSTEM_HEALTH.value]:
+            return self.timeout_evaluator.evaluate(device)
+            
         elif device_type == DeviceType.CAMERA.value:
-            return self._evaluate_camera_device(device)
+            return self.failure_rate_evaluator.evaluate(device)
+            
         else:
-            # For other device types (unknown)
-            self.logger.debug(f"No decision logic for device type: {device_type} (device: {device.device_id})")
+            self.logger.debug(f"No evaluation logic for device type: {device_type}")
             return None
-
-    def _evaluate_relay_device(self, device: DeviceInfo) -> str:
-        consecutive_count = device.last_log_consecutive_count
-        last_status = device.last_log_status
-        
-        # Determine current decision status
-        if consecutive_count >= self.relay_fail_threshold:
-            return last_status  # Use the actual device status ('fail' or 'success')
-        else:
-            return None  # Below threshold - no status change needed
-
-    def _evaluate_thread_device(self, device: DeviceInfo) -> str:
-        """Evaluate thread devices based on time since last activity"""
-        time_since_update = datetime.now() - device.last_updated
-        timeout_threshold = timedelta(minutes=self.minutes_to_restart)
-        
-        if time_since_update >= timeout_threshold:
-            # Check if DecisionEngine has been running long enough to restart
-            if self._should_restart_eintzofia():
-                self.logger.info("RESTARTING EIN TZOFIA")
-                self._record_restart()  # Record the restart time and count
-                # TODO: Add actual restart logic here
-            else:
-                # Log when restart would happen but timing prevents it
-                engine_runtime = datetime.now() - self._start_time if self._start_time else timedelta(0)
-                restart_threshold = timedelta(minutes=self.minutes_to_restart)
-                self.logger.info(f"Thread device failure detected but not restarting Ein Tzofia yet - engine runtime: {engine_runtime}, required: {restart_threshold}")
-            return 'fail'  # Thread inactive too long
-        else:
-            return 'success'  # Thread is active
-
-    def _evaluate_camera_device(self, device: DeviceInfo) -> str:
-        """Evaluate camera devices based on failure rate"""
-        failure_rate = device.get_failure_rate()
-
-        if failure_rate >= self.camera_fail_threshold:
-            return 'fail'  
-        else:
-            return 'success'
     
-    def _should_restart_eintzofia(self) -> bool:
+    def _is_eintzofia_running(self) -> bool:
         """
-        Check if Ein Tzofia should be restarted.
-        
-        Only restart if:
-        1. The DecisionEngine has been running for longer than the restart timeout
-        2. Enough time has passed since the last restart (cooldown period)
+        Check if Ein Tzofia process is currently running.
         
         Returns:
-            True if Ein Tzofia should be restarted, False otherwise
+            True if Ein Tzofia is running, False otherwise
         """
-        if self._start_time is None:
-            return False
-        
-        # Calculate how long the DecisionEngine has been running
-        engine_runtime = datetime.now() - self._start_time
-        restart_threshold = timedelta(minutes=self.minutes_to_restart)
-        
-        # Check if engine has been running long enough
-        if engine_runtime < restart_threshold:
-            self.logger.debug(f"DecisionEngine runtime ({engine_runtime}) < restart threshold ({restart_threshold}), skipping Ein Tzofia restart")
-            return False
-        
-        # Check cooldown period since last restart
-        last_restart_str = self._restart_info.get('last_restart_time')
-        if last_restart_str:
-            try:
-                last_restart_time = datetime.fromisoformat(last_restart_str)
-                time_since_last_restart = datetime.now() - last_restart_time
-                cooldown_threshold = timedelta(minutes=self.restart_cooldown_minutes)
-                
-                if time_since_last_restart < cooldown_threshold:
-                    self.logger.debug(f"Time since last restart ({time_since_last_restart}) < cooldown threshold ({cooldown_threshold}), skipping Ein Tzofia restart")
-                    return False
+        try:
+            for proc in psutil.process_iter(['name', 'exe']):
+                try:
+                    # Check both process name and executable path
+                    proc_name = proc.info.get('name', '').lower()
+                    proc_exe = proc.info.get('exe', '').lower()
                     
-            except ValueError as e:
-                self.logger.warning(f"Could not parse last restart time '{last_restart_str}': {e}")
-        
-        self.logger.debug(f"DecisionEngine runtime ({engine_runtime}) >= restart threshold ({restart_threshold}), allowing Ein Tzofia restart")
-        
-        # Check if EinTzofia is actually running (if check is enabled)
-        if self.check_eintzofia_running_enabled:
-            if not self._is_eintzofia_running():
-                self.logger.debug("EinTzofia is not running, no need to restart")
-                return False
+                    # Look for processes that contain "eintzofia" in name or executable path
+                    if 'eintzofia' in proc_name or (proc_exe and 'eintzofia' in proc_exe):
+                        self.logger.debug(f"Found Ein Tzofia process: {proc.info}")
+                        return True
+                        
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    # Process might have ended between iterations or we don't have access
+                    continue
+                    
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Error checking if Ein Tzofia is running: {e}")
+            # If we can't check, assume it's not running (safer for restart)
+            return False
+
+    def _evaluate_restart_conditions(self) -> None:
+        """Evaluate if restart conditions are met and restart computer if needed."""
+        try:
+            # Check basic restart conditions first
+            if not self.restart_evaluator.should_restart(
+                self._device_statuses, 
+                self._restart_info, 
+                self._start_time
+            ):
+                # Log why restart was not performed (if there are failed thread devices)
+                failed_device = self.restart_evaluator._find_failed_thread_device(self._device_statuses)
+                if failed_device:
+                    engine_runtime = datetime.now() - self._start_time if self._start_time else timedelta(0)
+                    self.logger.info(f"Thread device failure detected but not restarting - engine runtime: {engine_runtime}")
+                    print(f"Thread device failure detected but not restarting - engine runtime: {engine_runtime}")  # TODO: Remove this print later
+                return
+            
+            # If basic conditions are met, check Ein Tzofia running condition if enabled
+            if self.check_eintzofia_running_enabled:
+                if not self._is_eintzofia_running():
+                    self.logger.info("Thread device failure detected but Ein Tzofia is NOT running - restart blocked")
+                    print("Thread device failure detected but Ein Tzofia is NOT running - restart blocked")  # TODO: Remove this print later
+                    return
+                else:
+                    self.logger.info("Ein Tzofia is running - restart approved")
+                    print("Ein Tzofia is running - restart approved")  # TODO: Remove this print later
             else:
-                self.logger.debug("EinTzofia is running, restart is appropriate")
-        else:
-            self.logger.debug("EinTzofia running check is disabled, proceeding with restart")
-        
-        return True
+                self.logger.info("Ein Tzofia running check disabled - restart approved")
+                print("Ein Tzofia running check disabled - restart approved")  # TODO: Remove this print later
+            
+            # All conditions met - proceed with restart
+            self.logger.info("RESTARTING COMPUTER due to thread device failure")
+            print("RESTARTING COMPUTER due to thread device failure")  # TODO: Remove this print later
+            self._record_restart()
+            # TODO: Add actual computer restart logic here
+            
+        except Exception as e:
+            self.logger.error(f"Error checking restart conditions: {e}")
     
     def _record_restart(self) -> None:
         """Record that a restart has occurred by updating the restart info."""
         try:
-            current_time = datetime.now()
             restart_count = self._restart_info.get('restart_count', 0) + 1
+            restart_record = self.restart_evaluator.create_restart_record()
+            restart_record['restart_count'] = restart_count
             
             self._restart_info = {
-                'last_restart_time': current_time.isoformat(),
+                'last_restart_time': restart_record['last_restart_time'],
                 'restart_count': restart_count
             }
             
             self._save_device_statuses()  # Save the updated restart info
-            self.logger.info(f"Recorded restart #{restart_count} at {current_time}")
+            self.logger.info(f"Recorded restart #{restart_count} at {restart_record['timestamp']}")
             
         except Exception as e:
             self.logger.error(f"Failed to record restart: {e}")
-    
-    def _is_eintzofia_running(self) -> bool:
-        """
-        Check if EinTzofia process is currently running.
-        
-        Returns:
-            True if EinTzofia is running, False otherwise
-        """
-        try:
-            # Get EinTzofia path from config
-            config = ConfigService()
-            eintzofia_path = config.get("general", "eintzofia_path", "")
-            
-            if not eintzofia_path:
-                self.logger.warning("EinTzofia path not configured, assuming it's not running")
-                return False
-            
-            # Extract the executable name from the path
-            eintzofia_exe_name = os.path.basename(eintzofia_path)
-            
-            # For Windows, ensure we have the .exe extension for comparison
-            current_os = platform.system()
-            if current_os == "Windows":
-                if not eintzofia_exe_name.lower().endswith('.exe'):
-                    eintzofia_exe_name += '.exe'
-            
-            # Check all running processes
-            for proc in psutil.process_iter(['pid', 'name']):
-                try:
-                    proc_name = proc.info['name']
-                    if proc_name:
-                        # Case-insensitive comparison
-                        if proc_name.lower() == eintzofia_exe_name.lower():
-                            self.logger.debug(f"Found EinTzofia process: {proc_name} (PID: {proc.info['pid']})")
-                            return True
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    # Process disappeared or access denied, continue checking others
-                    continue
-            
-            self.logger.debug(f"EinTzofia process '{eintzofia_exe_name}' not found in running processes")
-            return False
-            
-        except Exception as e:
-            self.logger.error(f"Error checking if EinTzofia is running: {e}")
-            # If we can't check, assume it's running to avoid unnecessary restarts
-            return True
     
     def _ensure_device_tracked(self, device: DeviceInfo) -> None:
         """Ensure device is tracked in the json file"""
@@ -586,16 +538,16 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.error(f"Error requesting alert resolution for device {device.device_id}: {e}")
     
-    def _handle_status_change(self, device: DeviceInfo, new_status: str) -> None:
+    def _process_device_evaluation(self, device: DeviceInfo, new_status: str) -> None:
         """
-        Handle status changes for any device type.
+        Process device evaluation result and take appropriate actions.
         
-        This method contains the common logic for:
-        - Always alerting for failed devices (regardless of status change)
-        - Only alerting recovery when status changes from fail to success
+        This method handles:
+        - Creating alerts for failed devices
+        - Resolving alerts when devices recover  
         - Sending email notifications for status changes
-        - Logging appropriate messages
-        - Updating persistent storage
+        - Logging status changes
+        - Updating persistent status storage
         """
         device_id = device.device_id
         previous_status = self._get_device_status(device_id)

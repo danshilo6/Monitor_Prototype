@@ -42,12 +42,12 @@ decision_thread.start()
 
 ## How It Works
 
-1. **Device Failure Detection**: DecisionEngine detects device failure in `_handle_status_change()`
+1. **Device Failure Detection**: DecisionEngine detects device failure in `_process_device_evaluation()`
 2. **Signal Emission**: DecisionEngine emits `alert_creation_requested` signal with Alert object
 3. **Alert Creation**: AlertDatabase receives signal and calls `add_alert()` method
 4. **Real-time Update**: AlertDatabase emits `alert_added` signal to update UI
 
-5. **Device Recovery Detection**: DecisionEngine detects device recovery in `_handle_status_change()`
+5. **Device Recovery Detection**: DecisionEngine detects device recovery in `_process_device_evaluation()`
 6. **Signal Emission**: DecisionEngine emits `alert_resolution_requested` signal with device_id
 7. **Alert Deletion**: AlertDatabase receives signal and calls `resolve_alerts_for_device()` method (which deletes the alert)
 8. **Real-time Update**: AlertDatabase emits `alert_resolved` signal to update UI
