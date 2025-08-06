@@ -14,6 +14,7 @@ Main functionality:
 import time
 import re
 from pathlib import Path
+from typing import Optional
 import pandas as pd
 from dataclasses import replace
 from monitor.core.log_reader import LogReader
@@ -32,13 +33,15 @@ class LogProcessor:
     
     def __init__(self, 
                  logs_directory: Path,
-                 data_directory: Path):
+                 data_directory: Path,
+                 devices_db: Optional['DevicesDatabase'] = None):
         """
         Initialize the log processor.
         
         Args:
             logs_directory: Directory containing the log database files
             data_directory: Directory containing the devices database
+            devices_db: Optional shared DevicesDatabase instance. If None, creates own instance.
         """
         self.logger = get_logger("monitor.core.log_processor")
         
@@ -52,8 +55,13 @@ class LogProcessor:
         # Log reader - handles its own state persistence
         self.log_reader = LogReader(logs_directory)
         
-        # Devices database
-        self.devices_db = DevicesDatabase(data_directory / "devices.db")
+        # Devices database - use shared instance if provided, otherwise create own
+        if devices_db is not None:
+            self.devices_db = devices_db
+            self.logger.debug("Using shared DevicesDatabase instance")
+        else:
+            self.devices_db = DevicesDatabase(data_directory / "devices.db")
+            self.logger.debug("Created new DevicesDatabase instance")
         
         # Expected system threads that should always be monitored
         self._expected_threads = [
@@ -301,15 +309,14 @@ class LogProcessor:
                 device_list = '\n'.join(logged_devices)
                 self.logger.debug(f"Devices with new logs in this batch: {device_list}")
             
-            # Step 4: Write all updated devices back to database
-            success_count = 0
-            for device_id, device_info in devices_in_memory.items():
-                if self.devices_db.update_device(device_info):
-                    success_count += 1
-                else:
-                    self.logger.error(f"Failed to update device {device_id} in database")
+            # Step 4: Write all updated devices back to database using batch update
+            device_list = list(devices_in_memory.values())
+            success_count = self.devices_db.update_devices_batch(device_list)
             
-            self.logger.debug(f"Processed {processed_count} log entries, updated {success_count} devices in database")
+            if success_count == len(device_list):
+                self.logger.debug(f"Processed {processed_count} log entries, batch updated {success_count} devices in database")
+            else:
+                self.logger.warning(f"Processed {processed_count} log entries, but only {success_count}/{len(device_list)} devices were successfully updated")
             
             return len(new_logs)  # Return count of processed logs
                 

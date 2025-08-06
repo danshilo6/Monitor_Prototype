@@ -78,9 +78,6 @@ class DecisionEngine(QObject):
         # Timer for monitoring cycles (will be created when started)
         self._cycle_timer = None
         
-        # Initialize log processor (no timer - controlled by this engine)
-        self.log_processor = LogProcessor(logs_directory, data_directory)
-        
         # Device failure thresholds and system settings (loaded from config)
         self.relay_fail_threshold = DEFAULT_RELAY_FAIL  # For fan and relay-controlled devices
         self.camera_fail_threshold = DEFAULT_CAMERA_FAIL
@@ -96,6 +93,9 @@ class DecisionEngine(QObject):
         
         # Database connection
         self.devices_db = DevicesDatabase(data_directory / "devices.db")
+        
+        # Initialize log processor with shared database (no timer - controlled by this engine)
+        self.log_processor = LogProcessor(logs_directory, data_directory, self.devices_db)
         
         # Note: Alert database connection will be handled via signals
         

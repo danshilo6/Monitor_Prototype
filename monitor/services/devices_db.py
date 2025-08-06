@@ -2,48 +2,45 @@
 
 import sqlite3
 import os
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from datetime import datetime
 from monitor.log_setup import get_logger
 from monitor.services.devices_models import DeviceInfo
 
 
 class DevicesDatabase:
-    """Database for persistent device storage"""
+    """Database for persistent device storage using connection-per-operation pattern"""
     
     def __init__(self, db_file: str = "data/devices.db"):
         self.logger = get_logger("monitor.services.devices_db")
-        # Ensure data directory exists (but not for special paths like :memory:)
+        
+        # Store path, don't create persistent connection
         if db_file != ":memory:" and os.path.dirname(db_file):
             os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.db_file = db_file
-        self._conn: sqlite3.Connection | None = None
+        
         self.logger.info(f"Initializing devices database: {db_file}")
-        self._init_database()
+        # Initialize schema on first connection
+        self._ensure_database_schema()
     
-    def __del__(self):
-        """Ensure connection is closed when object is destroyed"""
-        self.close()
-    
-    def _init_database(self):
-        """Initialize database connection and create tables"""
-        # Close any existing connection first
-        if self._conn:
-            try:
-                self._conn.close()
-            except:
-                pass  # Ignore errors when closing old connection
-            self._conn = None
-            
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a new database connection for each operation."""
         try:
-            self._conn = sqlite3.connect(
+            conn = sqlite3.connect(
                 self.db_file,
-                check_same_thread=False  # Allow multi-threaded access
+                check_same_thread=False
             )
-            self._conn.row_factory = sqlite3.Row
-            
-            # Check if table exists and what schema it has
-            cursor = self._conn.execute('''
+            conn.row_factory = sqlite3.Row
+            return conn
+        except Exception as e:
+            self.logger.error(f"Failed to connect to database: {e}")
+            raise
+    
+    def _ensure_database_schema(self):
+        """Ensure database schema exists (called once during init)."""
+        with self._get_connection() as conn:
+            # Check if table exists
+            cursor = conn.execute('''
                 SELECT name FROM sqlite_master 
                 WHERE type='table' AND name='devices'
             ''')
@@ -51,52 +48,43 @@ class DevicesDatabase:
             
             if table_exists:
                 # Check current schema
-                cursor = self._conn.execute("PRAGMA table_info(devices)")
+                cursor = conn.execute("PRAGMA table_info(devices)")
                 columns = [row[1] for row in cursor.fetchall()]
                 
-                # Check if we need to migrate to the new schema
                 required_columns = ['device_id', 'device_type', 'status', 'last_log_status', 
                                   'last_log_consecutive_count', 'success_count', 'fail_count', 'recent_pattern']
                 if not all(col in columns for col in required_columns):
-                    self.logger.info("Migrating database schema to new format...")
-                    self._migrate_to_new_schema()
+                    self.logger.info("Migrating database schema...")
+                    self._migrate_schema(conn)
                 else:
                     self.logger.info("Database schema is up to date")
             else:
-                # Create new table with new schema
-                self.logger.info("Creating new devices table with new schema")
-                self._conn.execute('''
-                    CREATE TABLE devices (
-                        device_id TEXT PRIMARY KEY,
-                        device_type TEXT NOT NULL,
-                        status TEXT NOT NULL,
-                        last_log_status TEXT NOT NULL,
-                        last_log_consecutive_count INTEGER NOT NULL DEFAULT 1,
-                        success_count INTEGER NOT NULL DEFAULT 0,
-                        fail_count INTEGER NOT NULL DEFAULT 0,
-                        recent_pattern TEXT NOT NULL DEFAULT '',
-                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                self._conn.commit()
-                self.logger.info("Devices table created successfully")
-                
-        except Exception as e:
-            # Clean up partial connection on failure
-            if self._conn:
-                try:
-                    self._conn.close()
-                except:
-                    pass
-                self._conn = None
-            self.logger.error(f"Failed to initialize database: {e}")
-            raise
+                self.logger.info("Creating devices table...")
+                self._create_schema(conn)
     
-    def _migrate_to_new_schema(self):
+    def _create_schema(self, conn: sqlite3.Connection):
+        """Create the devices table schema."""
+        conn.execute('''
+            CREATE TABLE devices (
+                device_id TEXT PRIMARY KEY,
+                device_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                last_log_status TEXT NOT NULL,
+                last_log_consecutive_count INTEGER NOT NULL DEFAULT 1,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                fail_count INTEGER NOT NULL DEFAULT 0,
+                recent_pattern TEXT NOT NULL DEFAULT '',
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        conn.commit()
+        self.logger.info("Devices table created successfully")
+    
+    def _migrate_schema(self, conn: sqlite3.Connection):
         """Migrate from old schema to new schema with device_type and history tracking"""
         try:
             # Create new table with new schema
-            self._conn.execute('''
+            conn.execute('''
                 CREATE TABLE devices_new (
                     device_id TEXT PRIMARY KEY,
                     device_type TEXT NOT NULL DEFAULT 'unknown',
@@ -111,7 +99,7 @@ class DevicesDatabase:
             ''')
             
             # Check what columns exist in the old table
-            cursor = self._conn.execute("PRAGMA table_info(device_status)")
+            cursor = conn.execute("PRAGMA table_info(device_status)")
             old_columns = [row[1] for row in cursor.fetchall()]
             
             # Migrate data from old table if it exists
@@ -131,7 +119,7 @@ class DevicesDatabase:
                 else:
                     count_col = '1'  # Default value
                 
-                self._conn.execute(f'''
+                conn.execute(f'''
                     INSERT INTO devices_new 
                     (device_id, device_type, status, last_log_status, last_log_consecutive_count, 
                      success_count, fail_count, recent_pattern, last_updated)
@@ -151,54 +139,28 @@ class DevicesDatabase:
                 self.logger.warning("Old table has unknown schema, starting with empty table")
             
             # Replace old table
-            self._conn.execute('DROP TABLE IF EXISTS device_status')
-            self._conn.execute('ALTER TABLE devices_new RENAME TO devices')
-            self._conn.commit()
+            conn.execute('DROP TABLE IF EXISTS device_status')
+            conn.execute('ALTER TABLE devices_new RENAME TO devices')
+            conn.commit()
             self.logger.info("Schema migration completed successfully")
             
         except Exception as e:
             self.logger.error(f"Schema migration failed: {e}")
             # Rollback if possible
             try:
-                self._conn.execute('DROP TABLE IF EXISTS devices_new')
-                self._conn.commit()
+                conn.execute('DROP TABLE IF EXISTS devices_new')
+                conn.commit()
             except:
                 pass
             raise
-        except Exception as e:
-            self.logger.error(f"Failed to initialize database: {e}")
-            raise
-    
-    def _ensure_connection(self):
-        """Ensure database connection is active, reconnect if needed"""
-        if self._conn is None:
-            self.logger.info("Reconnecting to database...")
-            self._init_database()
-        else:
-            # Test if connection is still valid
-            try:
-                self._conn.execute("SELECT 1").fetchone()
-            except (sqlite3.Error, sqlite3.OperationalError):
-                self.logger.warning("Database connection is invalid, reconnecting...")
-                self.close()  # Properly close the invalid connection
-                self._init_database()
     
     def close(self):
-        """Close database connection"""
-        if self._conn:
-            try:
-                # Ensure all transactions are committed before closing
-                self._conn.commit()
-                self._conn.close()
-            except Exception as e:
-                self.logger.warning(f"Error closing database connection: {e}")
-            finally:
-                self._conn = None
-                self.logger.info("Database connection closed")
+        """No-op since we use connection-per-operation."""
+        self.logger.debug("Database close() called (no persistent connection)")
     
     def get_device(self, device_id: str) -> Optional[DeviceInfo]:
         """
-        Get current status for a device
+        Get current status for a device using connection-per-operation.
         
         Args:
             device_id: The device identifier
@@ -206,36 +168,36 @@ class DevicesDatabase:
         Returns:
             DeviceInfo instance or None if device not found
         """
-        self._ensure_connection()
         try:
-            row = self._conn.execute('''
-                SELECT device_type, status, last_log_status, last_log_consecutive_count, 
-                       success_count, fail_count, recent_pattern, last_updated
-                FROM devices 
-                WHERE device_id = ?
-            ''', (device_id,)).fetchone()
-            
-            if row:
-                last_updated = datetime.fromisoformat(row[7]) if row[7] else datetime.now()
-                return DeviceInfo(
-                    device_id=device_id,
-                    device_type=row[0],
-                    status=row[1],
-                    last_log_status=row[2],
-                    last_log_consecutive_count=row[3],
-                    success_count=row[4],
-                    fail_count=row[5],
-                    recent_pattern=row[6],
-                    last_updated=last_updated
-                )
-            return None
+            with self._get_connection() as conn:
+                row = conn.execute('''
+                    SELECT device_type, status, last_log_status, last_log_consecutive_count, 
+                           success_count, fail_count, recent_pattern, last_updated
+                    FROM devices 
+                    WHERE device_id = ?
+                ''', (device_id,)).fetchone()
+                
+                if row:
+                    last_updated = datetime.fromisoformat(row[7]) if row[7] else datetime.now()
+                    return DeviceInfo(
+                        device_id=device_id,
+                        device_type=row[0],
+                        status=row[1],
+                        last_log_status=row[2],
+                        last_log_consecutive_count=row[3],
+                        success_count=row[4],
+                        fail_count=row[5],
+                        recent_pattern=row[6],
+                        last_updated=last_updated
+                    )
+                return None
         except Exception as e:
-            self.logger.error(f"Failed to get status for device {device_id}: {e}")
+            self.logger.error(f"Failed to get device {device_id}: {e}")
             return None
     
     def update_device(self, device_info: DeviceInfo) -> bool:
         """
-        Update device status using a DeviceInfo object
+        Update device status using a DeviceInfo object with connection-per-operation.
         
         Args:
             device_info: DeviceInfo containing all the data to update
@@ -243,74 +205,120 @@ class DevicesDatabase:
         Returns:
             True if successful, False otherwise
         """
-        self._ensure_connection()
         try:
-            self._conn.execute('''
-                INSERT OR REPLACE INTO devices 
-                (device_id, device_type, status, last_log_status, last_log_consecutive_count,
-                 success_count, fail_count, recent_pattern, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                device_info.device_id,
-                device_info.device_type,
-                device_info.status,
-                device_info.last_log_status,
-                device_info.last_log_consecutive_count,
-                device_info.success_count,
-                device_info.fail_count,
-                device_info.recent_pattern,
-                device_info.last_updated.isoformat()
-            ))
-            self._conn.commit()
-            
-            self.logger.debug(f"Updated device {device_info.device_id}: status={device_info.status}, "
-                            f"last_log={device_info.last_log_status}, count={device_info.last_log_consecutive_count}")
-            return True
+            with self._get_connection() as conn:
+                conn.execute('''
+                    INSERT OR REPLACE INTO devices 
+                    (device_id, device_type, status, last_log_status, last_log_consecutive_count,
+                     success_count, fail_count, recent_pattern, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    device_info.device_id,
+                    device_info.device_type,
+                    device_info.status,
+                    device_info.last_log_status,
+                    device_info.last_log_consecutive_count,
+                    device_info.success_count,
+                    device_info.fail_count,
+                    device_info.recent_pattern,
+                    device_info.last_updated.isoformat()
+                ))
+                
+                self.logger.debug(f"Updated device {device_info.device_id}: status={device_info.status}, "
+                                f"last_log={device_info.last_log_status}, count={device_info.last_log_consecutive_count}")
+                return True
         except Exception as e:
             self.logger.error(f"Failed to update status for device {device_info.device_id}: {e}")
             return False
     
+    def update_devices_batch(self, device_infos: List[DeviceInfo]) -> int:
+        """
+        Update multiple devices in a single transaction using executemany() for performance.
+        
+        Args:
+            device_infos: List of DeviceInfo objects to update
+            
+        Returns:
+            Number of devices successfully updated
+        """
+        if not device_infos:
+            return 0
+            
+        try:
+            with self._get_connection() as conn:
+                # Prepare data for executemany
+                data = [
+                    (
+                        device_info.device_id,
+                        device_info.device_type,
+                        device_info.status,
+                        device_info.last_log_status,
+                        device_info.last_log_consecutive_count,
+                        device_info.success_count,
+                        device_info.fail_count,
+                        device_info.recent_pattern,
+                        device_info.last_updated.isoformat()
+                    )
+                    for device_info in device_infos
+                ]
+                
+                # Execute batch update
+                conn.executemany('''
+                    INSERT OR REPLACE INTO devices 
+                    (device_id, device_type, status, last_log_status, last_log_consecutive_count,
+                     success_count, fail_count, recent_pattern, last_updated)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', data)
+                
+                updated_count = len(device_infos)
+                self.logger.debug(f"Batch updated {updated_count} devices")
+                return updated_count
+                
+        except Exception as e:
+            self.logger.error(f"Failed to batch update devices: {e}")
+            return 0
+    
     def get_all(self) -> Dict[str, DeviceInfo]:
         """
-        Get all device statuses
+        Get all device statuses using connection-per-operation.
         
         Returns:
             Dictionary mapping device_id to DeviceInfo
         """
-        self._ensure_connection()
         try:
-            rows = self._conn.execute('''
-                SELECT device_id, device_type, status, last_log_status, last_log_consecutive_count,
-                       success_count, fail_count, recent_pattern, last_updated
-                FROM devices
-                ORDER BY last_updated DESC
-            ''').fetchall()
-            
-            statuses = {}
-            for row in rows:
-                device_id = row[0]
-                last_updated = datetime.fromisoformat(row[8]) if row[8] else datetime.now()
-                status_info = DeviceInfo(
-                    device_id=device_id,
-                    device_type=row[1],
-                    status=row[2],
-                    last_log_status=row[3],
-                    last_log_consecutive_count=row[4],
-                    success_count=row[5],
-                    fail_count=row[6],
-                    recent_pattern=row[7],
-                    last_updated=last_updated
-                )
-                statuses[device_id] = status_info
-            
-            return statuses
+            with self._get_connection() as conn:
+                rows = conn.execute('''
+                    SELECT device_id, device_type, status, last_log_status, last_log_consecutive_count,
+                           success_count, fail_count, recent_pattern, last_updated
+                    FROM devices
+                    ORDER BY last_updated DESC
+                ''').fetchall()
+                
+                statuses = {}
+                for row in rows:
+                    device_id = row[0]
+                    last_updated = datetime.fromisoformat(row[8]) if row[8] else datetime.now()
+                    status_info = DeviceInfo(
+                        device_id=device_id,
+                        device_type=row[1],
+                        status=row[2],
+                        last_log_status=row[3],
+                        last_log_consecutive_count=row[4],
+                        success_count=row[5],
+                        fail_count=row[6],
+                        recent_pattern=row[7],
+                        last_updated=last_updated
+                    )
+                    statuses[device_id] = status_info
+                
+                return statuses
         except Exception as e:
             self.logger.error(f"Failed to get all device statuses: {e}")
             return {}
     
     def remove_device(self, device_id: str) -> bool:
         """
-        Remove a device from the status tracking
+        Remove a device from the status tracking with connection-per-operation.
         
         Args:
             device_id: The device identifier
@@ -318,26 +326,25 @@ class DevicesDatabase:
         Returns:
             True if successful, False otherwise
         """
-        self._ensure_connection()
         try:
-            cursor = self._conn.execute('''
-                DELETE FROM devices WHERE device_id = ?
-            ''', (device_id,))
-            
-            if cursor.rowcount > 0:
-                self._conn.commit()
-                self.logger.info(f"Removed device {device_id} from status tracking")
-                return True
-            else:
-                self.logger.warning(f"Device {device_id} not found for removal")
-                return False
+            with self._get_connection() as conn:
+                cursor = conn.execute('''
+                    DELETE FROM devices WHERE device_id = ?
+                ''', (device_id,))
+                
+                if cursor.rowcount > 0:
+                    self.logger.info(f"Removed device {device_id} from status tracking")
+                    return True
+                else:
+                    self.logger.warning(f"Device {device_id} not found for removal")
+                    return False
         except Exception as e:
             self.logger.error(f"Failed to remove device {device_id}: {e}")
             return False
     
     def get_by_status(self, status: str) -> Dict[str, DeviceInfo]:
         """
-        Get all devices with a specific status
+        Get all devices with a specific status using connection-per-operation.
         
         Args:
             status: The status to filter by
@@ -345,34 +352,34 @@ class DevicesDatabase:
         Returns:
             Dictionary mapping device_id to DeviceInfo
         """
-        self._ensure_connection()
         try:
-            rows = self._conn.execute('''
-                SELECT device_id, device_type, status, last_log_status, last_log_consecutive_count,
-                       success_count, fail_count, recent_pattern, last_updated
-                FROM devices
-                WHERE status = ?
-                ORDER BY last_updated DESC
-            ''', (status,)).fetchall()
-            
-            devices = {}
-            for row in rows:
-                device_id = row[0]
-                last_updated = datetime.fromisoformat(row[8]) if row[8] else datetime.now()
-                status_info = DeviceInfo(
-                    device_id=device_id,
-                    device_type=row[1],
-                    status=row[2],
-                    last_log_status=row[3],
-                    last_log_consecutive_count=row[4],
-                    success_count=row[5],
-                    fail_count=row[6],
-                    recent_pattern=row[7],
-                    last_updated=last_updated
-                )
-                devices[device_id] = status_info
-            
-            return devices
+            with self._get_connection() as conn:
+                rows = conn.execute('''
+                    SELECT device_id, device_type, status, last_log_status, last_log_consecutive_count,
+                           success_count, fail_count, recent_pattern, last_updated
+                    FROM devices
+                    WHERE status = ?
+                    ORDER BY last_updated DESC
+                ''', (status,)).fetchall()
+                
+                devices = {}
+                for row in rows:
+                    device_id = row[0]
+                    last_updated = datetime.fromisoformat(row[8]) if row[8] else datetime.now()
+                    status_info = DeviceInfo(
+                        device_id=device_id,
+                        device_type=row[1],
+                        status=row[2],
+                        last_log_status=row[3],
+                        last_log_consecutive_count=row[4],
+                        success_count=row[5],
+                        fail_count=row[6],
+                        recent_pattern=row[7],
+                        last_updated=last_updated
+                    )
+                    devices[device_id] = status_info
+                
+                return devices
         except Exception as e:
             self.logger.error(f"Failed to get devices with status {status}: {e}")
             return {}
@@ -384,7 +391,6 @@ class DevicesDatabase:
         Args:
             title: Optional title for the output
         """
-        self._ensure_connection()
         devices = self.get_all()
         
         if not devices:
@@ -443,21 +449,20 @@ class DevicesDatabase:
     
     def reset_database(self) -> bool:
         """
-        Reset the devices database by clearing all devices
+        Reset the devices database by clearing all devices with connection-per-operation.
         
         This is useful for manual testing and starting fresh.
         
         Returns:
             True if successful, False otherwise
         """
-        self._ensure_connection()
         try:
             # Count devices before reset for logging
             device_count = len(self.get_all())
             
             # Clear all devices from the table
-            self._conn.execute('DELETE FROM devices')
-            self._conn.commit()
+            with self._get_connection() as conn:
+                conn.execute('DELETE FROM devices')
             
             self.logger.info(f"Database reset successful. Removed {device_count} devices")
             return True
