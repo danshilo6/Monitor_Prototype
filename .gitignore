@@ -8,6 +8,7 @@ data/
 # -others
 monitor_prototype/
 test_navigation_bar.py
+legacy_code/server.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
