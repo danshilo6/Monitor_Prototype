@@ -2,7 +2,7 @@
 Email Service
 
 Handles email notifications for device failures and recoveries.
-Currently implemented as a mock service that logs email actions without actually sending.
+Sends emails via the server manager which interfaces with the legacy server.
 """
 
 from datetime import datetime
@@ -16,20 +16,26 @@ class EmailService:
     """
     Service for handling email notifications about device status changes.
     
-    Currently operates in mock mode - logs email actions without actually sending.
-    Can be extended later to integrate with actual email providers.
+    Sends emails via the server manager which interfaces with the legacy server.
     """
     
-    def __init__(self, contact_db: ContactDatabase):
+    def __init__(self, contact_db: ContactDatabase, server_manager=None):
         """
         Initialize the email service.
         
         Args:
             contact_db: ContactDatabase instance for retrieving email addresses
+            server_manager: ServerManager instance for sending emails (optional for backwards compatibility)
         """
         self.logger = get_logger("monitor.services.email_service")
         self.contact_db = contact_db
-        self.logger.info("EmailService initialized in mock mode")
+        self.server_manager = server_manager
+        
+        if server_manager:
+            self.logger.info("EmailService initialized with server manager")
+        else:
+            self.logger.info("EmailService initialized in mock mode (no server manager)")
+    
     
     def send_device_failure_notification(self, device: DeviceInfo) -> None:
         """
@@ -53,10 +59,18 @@ class EmailService:
             subject = f"Device Failure Alert: {device_name}"
             message = f"Device {device_name} is not working since {failure_time}"
             
-            # Mock send email to all contacts
-            self._mock_send_email(email_addresses, subject, message)
-            
-            self.logger.info(f"Device failure notification sent for {device_name} to {len(email_addresses)} recipients")
+            # Send email via server manager or mock
+            if self.server_manager:
+                success = self.server_manager.send_email(subject, message, email_addresses)
+                
+                if success:
+                    self.logger.info(f"Device failure notification sent for {device_name} to {len(email_addresses)} recipients")
+                else:
+                    self.logger.error(f"Failed to send device failure notification for {device_name}")
+            else:
+                # Fall back to mock for backwards compatibility
+                self._mock_send_email(email_addresses, subject, message)
+                self.logger.info(f"Device failure notification (mock) sent for {device_name} to {len(email_addresses)} recipients")
             
         except Exception as e:
             self.logger.error(f"Failed to send device failure notification for {device.device_id}: {e}")
@@ -83,10 +97,18 @@ class EmailService:
             subject = f"Device Recovery: {device_name}"
             message = f"Device {device_name} has recovered and is working normally as of {recovery_time}"
             
-            # Mock send email to all contacts
-            self._mock_send_email(email_addresses, subject, message)
-            
-            self.logger.info(f"Device recovery notification sent for {device_name} to {len(email_addresses)} recipients")
+            # Send email via server manager or mock
+            if self.server_manager:
+                success = self.server_manager.send_email(subject, message, email_addresses)
+                
+                if success:
+                    self.logger.info(f"Device recovery notification sent for {device_name} to {len(email_addresses)} recipients")
+                else:
+                    self.logger.error(f"Failed to send device recovery notification for {device_name}")
+            else:
+                # Fall back to mock for backwards compatibility
+                self._mock_send_email(email_addresses, subject, message)
+                self.logger.info(f"Device recovery notification (mock) sent for {device_name} to {len(email_addresses)} recipients")
             
         except Exception as e:
             self.logger.error(f"Failed to send device recovery notification for {device.device_id}: {e}")

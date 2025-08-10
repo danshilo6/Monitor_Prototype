@@ -17,6 +17,7 @@ from monitor.core.decision_engine import DecisionEngine
 from monitor.services.alert_db import AlertDatabase
 from monitor.services.contact_db import ContactDatabase
 from monitor.services.email_service import EmailService
+from monitor.services.config_service import ConfigService
 from monitor.log_setup import get_logger
 
 
@@ -36,7 +37,8 @@ class ThreadManager(QObject):
     thread_error = Signal(str)  # Emits error message
     cycle_completed = Signal(int)        # Forwards from DecisionEngine
     
-    def __init__(self, logs_directory: Path, data_directory: Path, alert_db: AlertDatabase, contact_db: ContactDatabase, cycle_interval: float = 3.0):
+    def __init__(self, logs_directory: Path, data_directory: Path, alert_db: AlertDatabase, 
+                 contact_db: ContactDatabase, config_service: ConfigService, server_manager=None, cycle_interval: float = 3.0):
         """
         Initialize the thread manager.
         
@@ -45,6 +47,8 @@ class ThreadManager(QObject):
             data_directory: Directory containing the data databases (devices, alerts, etc.)
             alert_db: Alert database instance for signal connections
             contact_db: Contact database instance for email notifications
+            config_service: Configuration service instance
+            server_manager: Server manager instance for email/SMS services (optional)
             cycle_interval: Time in seconds between monitoring cycles
         """
         super().__init__()
@@ -53,10 +57,12 @@ class ThreadManager(QObject):
         self.data_directory = data_directory
         self.alert_db = alert_db
         self.contact_db = contact_db
+        self.config_service = config_service
+        self.server_manager = server_manager
         self.cycle_interval = cycle_interval
         
-        # Create email service
-        self.email_service = EmailService(self.contact_db)
+        # Create email service with server manager
+        self.email_service = EmailService(self.contact_db, self.server_manager)
         
         # Thread objects
         self.decision_engine_thread: Optional[QThread] = None
@@ -168,6 +174,7 @@ class ThreadManager(QObject):
             self.decision_engine = DecisionEngine(
                 logs_directory=self.logs_directory,
                 data_directory=self.data_directory,
+                config_service=self.config_service,
                 cycle_interval=self.cycle_interval
             )
             
@@ -213,10 +220,8 @@ class ThreadManager(QObject):
                 self.decision_engine.device_failure_notification_requested.connect(
                     self.email_service.send_device_failure_notification
                 )
-                self.decision_engine.device_recovery_notification_requested.connect(
-                    self.email_service.send_device_recovery_notification
-                )
-                self.logger.debug("Connected DecisionEngine -> EmailService signals")
+                # Note: Device recovery notifications are disabled for now
+                self.logger.debug("Connected DecisionEngine -> EmailService signals (failure notifications only)")
             
             self.logger.info("Component signals connected successfully")
             

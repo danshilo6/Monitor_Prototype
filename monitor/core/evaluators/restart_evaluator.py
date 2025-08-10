@@ -52,7 +52,6 @@ class RestartEvaluator:
             return False
         
         self.logger.debug(f"Found failed thread device: {failed_thread_device}")
-        print(f"Found failed thread device: {failed_thread_device}")  # TODO: Remove this print later
         
         # Check timing constraints
         if not self._check_engine_runtime(engine_start_time):
@@ -62,7 +61,6 @@ class RestartEvaluator:
             return False
         
         self.logger.info("All restart conditions met - restart approved")
-        print("All restart conditions met - restart approved")  # TODO: Remove this print later
         return True
     
     def _find_failed_thread_device(self, device_statuses: Dict[str, Dict[str, Any]]) -> Optional[str]:
@@ -100,11 +98,9 @@ class RestartEvaluator:
         
         if engine_runtime < restart_threshold:
             self.logger.debug(f"Engine runtime ({engine_runtime}) < restart threshold ({restart_threshold})")
-            print(f"Engine too new: runtime {engine_runtime} < threshold {restart_threshold}")  # TODO: Remove this print later
             return False
         
         self.logger.debug(f"Engine runtime check passed: {engine_runtime} >= {restart_threshold}")
-        print(f"Runtime check passed: {engine_runtime} >= {restart_threshold}")  # TODO: Remove this print later
         return True
     
     def _check_restart_cooldown(self, restart_info: Dict[str, Any]) -> bool:

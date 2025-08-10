@@ -1,7 +1,7 @@
 {
   "general": {
     "location_name": "Dan's PC",
-    "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_12_07_25.exe"
+    "eintzofia_path": "C:/Users/dansh/github/EinTzofia/EinTzofia_12_07_25.exe"
   },
   "versions": {
     "monitor_version": "12-07-25",
@@ -10,12 +10,16 @@
   "system": {
     "enable_restart": true,
     "minutes_to_restart": "1",
+    "restart_cooldown_minutes": "2",
     "startup_snooze_time": "4",
     "check_eintzofia_running": true
   },
   "devices": {
-    "relay_fail_threshold": "10",
+    "relay_fail_threshold": "30",
     "camera_fail_threshold": "0.5",
     "camera_log_minutes": "4"
+  },
+  "device": {
+    "signed_id": "0dd01bb30c28562c43c6f24e0c4c335c54f58754b6d36ed18aafdb966a3bc5accbd4e2350d0e9f7650e20e59e585f379c9ef524b2a95cb4a836ccaa6b661022919117188e7ee2a9a0146a6c0620f317dd5b66cc5848ea78bbcf6cb7c0c43fb2d82085bdd7fafc8eedbfcf45a42795f0c90e311bbdf533bf59771dddc9d3c9aaeff5ecb90ac51a8d57de0516c98e2b861998aa49e90a6a6ec78a1005bad6e909890dba80781985472d89a0e82e820e52c637ffcb208753cedf4f7a477b2c7ecadf584dd317a7a5329ae9a381b17a721189199ad6cb3cf2e0d54a080aea0581df33d1e32a104dc64b3803745cffb78aa9d86916e070496c041eaf46b54c8d69dee"
   }
 }

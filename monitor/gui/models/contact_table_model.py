@@ -86,3 +86,9 @@ class ContactTableModel(QAbstractTableModel):
         if 0 <= row < len(self._contacts):
             return self._contacts[row]
         return None
+    
+    def clear(self):
+        """Clear all contacts from the model"""
+        self.beginResetModel()
+        self._contacts.clear()
+        self.endResetModel()

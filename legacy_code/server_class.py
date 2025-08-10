@@ -58,8 +58,10 @@ class ServerManager:
             print("Failed uploading file:", e)
             return None          
 
+    # IMPORTANT FOR DAN
     def pulse_to_server(self,password = '',return_ID = False):     
         
+        # initialize download flags
         eintzofia_download = False
         monitor_download = False
 
@@ -209,6 +211,7 @@ class ServerManager:
             print(f"Exception in remove_id_from_server of server_class: {e}")
             return
 
+    # IMPORTANT FOR DAN
     def send_email(self,subject,message,emails):
 
         url = f"{self.base_url}/send_email"

@@ -32,7 +32,8 @@ class os_manager:
             return base.lower()
         else:
             return base  # On Linux, executables typically have no extension
-
+    
+    # IMPORTANT FOR DAN
     def restart_pc(self):
         """
         Restarts the PC.
@@ -61,7 +62,7 @@ class os_manager:
         # Open the file in a new terminal
         self.open_file_in_terminal(file_path)
 
-
+    # IMPORTANT FOR DAN
     def open_file(self, file_path):
         """
         First closes the executable if it's running, then opens it in a new terminal window.
@@ -178,8 +179,6 @@ class os_manager:
         except Exception as e:
             print(f"Failed to open file {full_path} in terminal: {e}")
             self.restart_pc()
-
-
 
     def extract_file(self,zip_path, save_path):
         try:
@@ -442,6 +441,7 @@ class os_manager:
         except Exception as e:
             print(f"Error deleting file {file_path}: {e}")
 
+    # IMPORTANT FOR DAN
     def get_hardware_info(self):
         cpu_info = ""
         system_uuid = ""
@@ -534,49 +534,8 @@ class os_manager:
         
         return hardware_info
 
-    
-    def compare_id(self, original_id, signed_id):
-            # Load public key from PEM file
-            pem_path = os.path.join(self.parent.settings_manager.data_dir, "shooshk.pem")
-            with open(pem_path, "rb") as pem_file:
-                public_pem = pem_file.read()
 
-            # Convert the hexadecimal signature into bytes
-            signature = bytes.fromhex(signed_id)
-
-            # Determine library filename based on the operating system
-            if sys.platform.startswith("linux"):
-                lib_filename = "shoosh.so"
-            else:
-                lib_filename = "shoosh.dll"
-            
-            lib_path = os.path.join(self.parent.settings_manager.data_dir, lib_filename)
-            
-            # Load the shared library
-            lib = ctypes.CDLL(lib_path)
-
-            # Set up function signatures
-            lib.load_public_key_from_mem.argtypes = [c_char_p, c_size_t]
-            lib.load_public_key_from_mem.restype  = c_void_p  # Returns EVP_PKEY*
-            lib.compare_id.argtypes = [c_char_p, POINTER(c_ubyte), c_size_t, c_void_p]
-            lib.compare_id.restype  = c_bool
-
-            # Load the public PEM into an EVP_PKEY*
-            public_key_ptr = lib.load_public_key_from_mem(public_pem, len(public_pem))
-            if not public_key_ptr:
-                raise ValueError("Failed to load public key into EVP_PKEY*.")
-
-            # Prepare signature buffer
-            sig_len = len(signature)
-            SignatureArrayType = c_ubyte * sig_len
-            signature_array = SignatureArrayType(*signature)
-
-            # Encode the original ID and call compare_id
-            orig_id_bytes = original_id.encode("utf-8")
-            result = lib.compare_id(orig_id_bytes, signature_array, sig_len, public_key_ptr)
-            return result
-
-
+    # IMPORTANT FOR DAN
     def generate_device_id(self):
         # Check if we're in frozen mode
         hardware_info = self.get_hardware_info()
@@ -586,7 +545,8 @@ class os_manager:
         device_id = hashlib.sha256(hardware_info_bytes).hexdigest()
         
         return device_id
-        
+
+
     def compare_id(self, original_id, signed_id):
             # Load public key from PEM file
             pem_path = os.path.join(self.parent.settings_manager.data_dir, "shooshk.pem")
@@ -627,6 +587,7 @@ class os_manager:
             orig_id_bytes = original_id.encode("utf-8")
             result = lib.compare_id(orig_id_bytes, signature_array, sig_len, public_key_ptr)
             return result
+
 
     def get_EinTzofia_path(self):
         # get path of this script/frozen exe(or linux comparable)
@@ -1056,6 +1017,51 @@ class os_manager:
         except Exception as e:
             print(f"Error moving shortcut to startup folder: {e}")
             return None
+
+
+
+
+    # def compare_id(self, original_id, signed_id):
+    #         # Load public key from PEM file
+    #         pem_path = os.path.join(self.parent.settings_manager.data_dir, "shooshk.pem")
+    #         with open(pem_path, "rb") as pem_file:
+    #             public_pem = pem_file.read()
+
+    #         # Convert the hexadecimal signature into bytes
+    #         signature = bytes.fromhex(signed_id)
+
+    #         # Determine library filename based on the operating system
+    #         if sys.platform.startswith("linux"):
+    #             lib_filename = "shoosh.so"
+    #         else:
+    #             lib_filename = "shoosh.dll"
+            
+    #         lib_path = os.path.join(self.parent.settings_manager.data_dir, lib_filename)
+            
+    #         # Load the shared library
+    #         lib = ctypes.CDLL(lib_path)
+
+    #         # Set up function signatures
+    #         lib.load_public_key_from_mem.argtypes = [c_char_p, c_size_t]
+    #         lib.load_public_key_from_mem.restype  = c_void_p  # Returns EVP_PKEY*
+    #         lib.compare_id.argtypes = [c_char_p, POINTER(c_ubyte), c_size_t, c_void_p]
+    #         lib.compare_id.restype  = c_bool
+
+    #         # Load the public PEM into an EVP_PKEY*
+    #         public_key_ptr = lib.load_public_key_from_mem(public_pem, len(public_pem))
+    #         if not public_key_ptr:
+    #             raise ValueError("Failed to load public key into EVP_PKEY*.")
+
+    #         # Prepare signature buffer
+    #         sig_len = len(signature)
+    #         SignatureArrayType = c_ubyte * sig_len
+    #         signature_array = SignatureArrayType(*signature)
+
+    #         # Encode the original ID and call compare_id
+    #         orig_id_bytes = original_id.encode("utf-8")
+    #         result = lib.compare_id(orig_id_bytes, signature_array, sig_len, public_key_ptr)
+    #         return result
+
 
 if __name__ == '__main__':
     osM = os_manager(None)

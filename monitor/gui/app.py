@@ -1,13 +1,81 @@
 import sys
 import argparse
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import QDir, QFile, QTimer
 from PySide6.QtGui import QIcon
 from monitor.gui.main_window import MainWindow
 from monitor.services.config_service import ConfigService
 from monitor.core.thread_manager import ThreadManager, setup_signal_handlers
+from monitor.core.os_manager import OSManager
+from monitor.core.server_manager import ServerManager
 from monitor.log_setup import init_logging, get_logger
 from pathlib import Path
+
+
+def auto_start_eintzofia_with_feedback(config_service, parent_window=None):
+    """
+    Auto-start EinTzofia with user feedback on failure.
+    Uses QTimer to avoid blocking the UI thread.
+    
+    Args:
+        config_service: Configuration service to get EinTzofia path
+        parent_window: Parent window for error dialogs (optional)
+    """
+    from PySide6.QtCore import QTimer
+    logger = get_logger("monitor.gui.app")
+    
+    def delayed_start():
+        """Execute auto-start after UI is fully loaded"""
+        try:
+            # Get EinTzofia path from config
+            eintzofia_path = config_service.get("general", "eintzofia_path", "")
+            logger.info(f"Attempting to auto-start EinTzofia: {eintzofia_path}")
+            
+            if not eintzofia_path:
+                logger.info("EinTzofia path not configured, skipping auto-start")
+                return
+            
+            # Create OSManager and try to open EinTzofia
+            os_manager = OSManager(config_service)
+            success = os_manager.open_file(eintzofia_path)
+            
+            if success:
+                logger.info("EinTzofia auto-started successfully")
+            else:
+                logger.warning("EinTzofia auto-start failed")
+                _show_eintzofia_error(
+                    "Failed to launch EinTzofia",
+                    f"Could not start EinTzofia automatically.\n\n"
+                    f"Path: {eintzofia_path}\n\n"
+                    "Please check if the file exists and try using the manual "
+                    "'Open/Restart EinTzofia' button in Settings > System.",
+                    parent_window
+                )
+                
+        except Exception as e:
+            logger.error(f"Error during EinTzofia auto-start: {e}")
+            _show_eintzofia_error(
+                "EinTzofia startup error",
+                f"An unexpected error occurred:\n\n{str(e)}\n\n"
+                "You can manually start EinTzofia using the button in Settings > System.",
+                parent_window
+            )
+    
+    # Delay the auto-start by 1 second to let UI finish loading
+    QTimer.singleShot(1000, delayed_start)
+
+
+def _show_eintzofia_error(title: str, message: str, parent_window=None):
+    """Show EinTzofia error dialog"""
+    from PySide6.QtWidgets import QMessageBox
+    
+    msg_box = QMessageBox(parent_window)
+    msg_box.setIcon(QMessageBox.Icon.Warning)
+    msg_box.setWindowTitle("EinTzofia Auto-Start Failed")
+    msg_box.setText(title)
+    msg_box.setDetailedText(message)
+    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msg_box.exec()
 
 
 def set_app_icon(app: QApplication) -> None:
@@ -76,7 +144,7 @@ def find_eintzofia_path() -> str:
     
     Looks in project root's parent folder for:
     1. A folder named "EinTzofia"
-    2. An exe file that starts with "EinTzofia"
+    2. An executable file that starts with "EinTzofia"
     
     Returns:
         str: Path to EinTzofia executable, or empty string if not found
@@ -98,29 +166,16 @@ def find_eintzofia_path() -> str:
         
         logger.debug(f"Found EinTzofia folder: {eintzofia_folder}")
         
-        # Look for EinTzofia*.exe files
-        exe_files = list(eintzofia_folder.glob("EinTzofia*.exe"))
-        
-        if not exe_files:
-            logger.debug(f"No EinTzofia*.exe files found in: {eintzofia_folder}")
-            return ""
-        
-        # Use the first matching exe file
-        exe_path = exe_files[0]
-        logger.info(f"Auto-detected EinTzofia executable: {exe_path}")
-        
-        if len(exe_files) > 1:
-            logger.warning(f"Multiple EinTzofia exe files found, using: {exe_path}")
-            logger.debug(f"Other files found: {[str(f) for f in exe_files[1:]]}")
-        
-        return str(exe_path)
+        # Use OSManager to find the executable
+        os_manager = OSManager()
+        return os_manager.find_eintzofia_executable(eintzofia_folder)
         
     except Exception as e:
         logger.error(f"Error auto-detecting EinTzofia path: {e}")
         return ""
 
 
-def create_thread_manager(config_service: ConfigService, alert_db, contact_db) -> ThreadManager:
+def create_thread_manager(config_service: ConfigService, alert_db, contact_db, server_manager=None) -> ThreadManager:
     """Create and initialize the thread manager."""
     logger = get_logger("monitor.gui.app")
     logger.debug("Creating thread manager")
@@ -161,12 +216,14 @@ def create_thread_manager(config_service: ConfigService, alert_db, contact_db) -
         # Data directory is always in project root
         data_directory = Path.cwd() / "data"
         
-        # Create thread manager with alert database and contact database
+        # Create thread manager with alert database, contact database, and config service
         thread_manager = ThreadManager(
             logs_directory=logs_directory,
             data_directory=data_directory,
             alert_db=alert_db,
-            contact_db=contact_db
+            contact_db=contact_db,
+            config_service=config_service,
+            server_manager=server_manager
         )
         
         logger.info("Thread manager created successfully")
@@ -188,6 +245,106 @@ def create_main_window(config_service: ConfigService, alert_db, contact_db, thre
     except Exception as e:
         logger.error("Failed to create main window", exc_info=True)
         raise
+
+
+def create_server_manager(config_service: ConfigService) -> ServerManager:
+    """Create and initialize the server manager."""
+    logger = get_logger("monitor.gui.app")
+    logger.debug("Creating server manager")
+    
+    try:
+        # Create OS manager instance  
+        os_manager = OSManager(config_service)
+        
+        # Create server manager with dependencies
+        server_manager = ServerManager(config_service, os_manager)
+        
+        logger.info("Server manager created successfully")
+        return server_manager
+        
+    except Exception as e:
+        logger.error(f"Failed to create server manager: {e}")
+        raise
+
+
+def authenticate_with_server(main_window, config_service: ConfigService, server_manager: ServerManager) -> bool:
+    """
+    Authenticate with server at startup. Returns True if monitoring should proceed.
+    
+    Args:
+        main_window: Main window instance for dialogs
+        config_service: Configuration service instance
+        server_manager: Server manager instance
+        
+    Returns:
+        bool: True if authenticated and monitoring should start, False otherwise
+    """
+    logger = get_logger("monitor.gui.app")
+    
+    try:
+        # Check if device ID exists and is approved on server
+        id_exists, id_approved = server_manager.check_id_exists_and_approved()
+        logger.info(f"Server check - ID exists: {id_exists}, ID approved: {id_approved}")
+        
+        # If already approved, proceed with monitoring
+        if id_approved and id_exists:
+            logger.info("Device already approved - authentication successful")
+            return True
+        
+        # Device needs authentication - keep asking for password until correct or cancelled
+        logger.info("Device not approved - requesting password authentication")
+        
+        while True:
+            password, ok = QInputDialog.getText(
+                main_window, 
+                'Authentication Required', 
+                'Enter password to enable monitoring and server communication:',
+                QLineEdit.EchoMode.Password
+            )
+            
+            if not ok:  # User cancelled
+                logger.info("User cancelled authentication")
+                return False
+                
+            if not password:  # Empty password - allow local monitoring
+                logger.info("Empty password provided - proceeding with local monitoring only")
+                return True
+            
+            # Attempt authentication with server
+            logger.info("Attempting server authentication")
+            is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
+                password, 
+                return_id=True
+            )
+            
+            if is_password_correct:
+                logger.info("Authentication successful")
+                
+                # Save the signed ID to config
+                if signed_id:
+                    config_service.set("device", "signed_id", signed_id)
+                    logger.info("Signed ID saved to configuration")
+                
+                return True
+            else:
+                logger.warning("Authentication failed - incorrect password")
+                _show_auth_error(main_window, "Incorrect password. Please try again.")
+                # Loop continues to ask for password again
+                
+    except Exception as e:
+        logger.error(f"Error during server authentication: {e}")
+        _show_auth_error(main_window, f"Server communication error: {str(e)}")
+        return False
+
+
+def _show_auth_error(parent_window, message: str):
+    """Show authentication error dialog."""
+    msg_box = QMessageBox(parent_window)
+    msg_box.setIcon(QMessageBox.Icon.Warning)
+    msg_box.setWindowTitle("Authentication Error")
+    msg_box.setText(message)
+    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msg_box.exec()
 
 
 def parse_arguments():
@@ -234,8 +391,11 @@ def main() -> int:
         # Initialize databases
         alert_db, contact_db = create_databases()
         
-        # Create and setup thread manager
-        thread_manager = create_thread_manager(config_service, alert_db, contact_db)
+        # Create server manager for email/SMS services
+        server_manager = create_server_manager(config_service)
+        
+        # Create and setup thread manager with server manager
+        thread_manager = create_thread_manager(config_service, alert_db, contact_db, server_manager)
         
         # Create main window with all dependencies
         window = create_main_window(config_service, alert_db, contact_db, thread_manager)
@@ -248,8 +408,20 @@ def main() -> int:
             lambda msg: logger.error(f"Thread error: {msg}")
         )
         
-        # Show window
+        # Show window first
         window.show()
+        
+        # Perform authentication after UI is shown
+        logger.info("Starting server authentication")
+        if not authenticate_with_server(window, config_service, server_manager):
+            logger.info("Authentication failed or cancelled - exiting application")
+            return 1
+        
+        # Authentication successful - continue with startup
+        logger.info("Authentication successful - continuing with application startup")
+        
+        # Auto-start EinTzofia with user feedback
+        auto_start_eintzofia_with_feedback(config_service, window)
         
         # Start worker threads
         if not thread_manager.start_threads():

@@ -117,3 +117,9 @@ class AlertTableModel(QAbstractTableModel):
         if 0 <= row < len(self._alerts):
             return self._alerts[row]
         return None
+    
+    def clear(self):
+        """Clear all alerts from the model"""
+        self.beginResetModel()
+        self._alerts.clear()
+        self.endResetModel()

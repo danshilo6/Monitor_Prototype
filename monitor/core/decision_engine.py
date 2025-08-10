@@ -6,15 +6,22 @@ Core decision engine that processes device status changes and makes automated de
 Main functionality:
 - Connects to the devices database
 - Receives signals from LogProcessor about new log entries
-- Designed to run on a separate thread
-- Will be extended to handle automated decision making
+- Designed to run on a separat        # Step 3: Evaluate devices and make decisions
+        try:
+            self._evaluate_devices()
+            self.logger.debug("Device evaluation completed")
+        except Exception as e:
+            self.logger.error(f"Device evaluation error: {e}")
+        
+        # Step 4: Evaluate restart conditions
+        try:
+            self._evaluate_restart_conditions()
+            self.logger.debug("Restart evaluation completed")
+        except Exception as e:
+            self.logger.error(f"Restart evaluation error: {e}")ill be extended to handle automated decision making
 """
 
 from pathlib import Path
-import json
-import os
-import platform
-import psutil
 from datetime import datetime, timedelta
 from PySide6.QtCore import QObject, Slot, Signal, QTimer
 from monitor.log_setup import get_logger
@@ -27,6 +34,10 @@ from monitor.core.evaluators.consecutive_count_evaluator import ConsecutiveCount
 from monitor.core.evaluators.timeout_evaluator import TimeoutEvaluator
 from monitor.core.evaluators.failure_rate_evaluator import FailureRateEvaluator
 from monitor.core.evaluators.restart_evaluator import RestartEvaluator
+from monitor.core.device_status_manager import DeviceStatusManager
+from monitor.core.restart_manager import RestartManager
+from monitor.core.os_manager import OSManager
+from monitor.core.server_manager import ServerManager
 
 DEFAULT_RELAY_FAIL = 200  # Used for fan devices and similar relay-controlled equipment
 DEFAULT_CAMERA_FAIL = 0.6
@@ -58,17 +69,22 @@ class DecisionEngine(QObject):
     device_failure_notification_requested = Signal(object)  # Emits DeviceInfo
     device_recovery_notification_requested = Signal(object)  # Emits DeviceInfo
     
-    def __init__(self, logs_directory: Path, data_directory: Path, cycle_interval: float = 3.0):
+    def __init__(self, logs_directory: Path, data_directory: Path, 
+                 config_service: ConfigService = None, cycle_interval: float = 3.0):
         """
         Initialize the decision engine.
         
         Args:
             logs_directory: Directory containing the log database files
             data_directory: Directory containing the devices database
+            config_service: Optional config service instance (creates new if None)
             cycle_interval: Time in seconds between monitoring cycles
         """
         super().__init__()
         self.logger = get_logger("monitor.core.decision_engine")
+        
+        # Use provided config service or create new one
+        self.config_service = config_service or ConfigService()
         
         # Configuration
         self.logs_directory = logs_directory
@@ -89,11 +105,14 @@ class DecisionEngine(QObject):
         self.restart_cooldown_minutes = DEFAULT_RESTART_COOLDOWN
         self.check_eintzofia_running_enabled = DEFAULT_CHECK_EINTZOFIA_RUNNING  # Whether to check if Ein Tzofia is running before restart
         
-        # Device status tracking (persistent)
-        self._device_statuses = {}  # {device_id: {'status': str, 'timestamp': str, 'type': str}}
-        self._restart_info = {}  # {'last_restart_time': str, 'restart_count': int}
-        self._status_file = self._get_status_file_path()
-        self._load_device_statuses()
+        # Initialize device status manager
+        self.device_status_manager = DeviceStatusManager()
+        
+        # Initialize OS manager
+        self.os_manager = OSManager(self.config_service)
+        
+        # Initialize server manager
+        self.server_manager = ServerManager(self.config_service, self.os_manager)
         
         # Database connection
         self.devices_db = DevicesDatabase(data_directory / "devices.db")
@@ -106,75 +125,11 @@ class DecisionEngine(QObject):
         self.timeout_evaluator = None
         self.failure_rate_evaluator = None
         self.restart_evaluator = None
+        self.restart_manager = None  # Will be initialized in start() with config
         
         # Note: Alert database connection will be handled via signals
         
         self.logger.info("DecisionEngine initialized")
-    
-    @staticmethod
-    def _get_status_file_path() -> Path:
-        """Get path to the decision engine status file."""
-        project_root = Path(__file__).parent.parent.parent
-        return project_root / "data" / "decision_engine_statuses.json"
-
-    def _load_device_statuses(self) -> None:
-        """Load device statuses from JSON file."""
-        try:
-            if self._status_file.exists():
-                with open(self._status_file, 'r') as f:
-                    data = json.load(f)
-                
-                # Handle both old format (just device statuses) and new format (with restart info)
-                if isinstance(data, dict) and 'devices' in data:
-                    # New format: {"devices": {...}, "restart_info": {...}}
-                    self._device_statuses = data.get('devices', {})
-                    self._restart_info = data.get('restart_info', {})
-                else:
-                    # Old format: just device statuses
-                    self._device_statuses = data
-                    self._restart_info = {}
-                
-                self.logger.debug(f"Loaded {len(self._device_statuses)} device statuses from file")
-            else:
-                self.logger.debug("No existing status file found, starting with empty statuses")
-                self._device_statuses = {}
-                self._restart_info = {}
-        except Exception as e:
-            self.logger.warning(f"Could not load device statuses: {e}")
-            self._device_statuses = {}
-            self._restart_info = {}
-
-    def _save_device_statuses(self) -> None:
-        """Save device statuses and restart info to JSON file."""
-        try:
-            # Ensure data directory exists
-            self._status_file.parent.mkdir(exist_ok=True)
-            
-            # Save in new format with both device statuses and restart info
-            data = {
-                'devices': self._device_statuses,
-                'restart_info': self._restart_info
-            }
-            
-            with open(self._status_file, 'w') as f:
-                json.dump(data, f, indent=2)
-            self.logger.debug(f"Saved {len(self._device_statuses)} device statuses and restart info to file")
-        except Exception as e:
-            self.logger.warning(f"Could not save device statuses: {e}")
-    
-    def _get_device_status(self, device_id: str) -> str:
-        """Get the current status for a device, returns 'success' if not found (new device)."""
-        device_info = self._device_statuses.get(device_id, {})
-        return device_info.get('status', 'success')
-    
-    def _update_device_status(self, device_id: str, status: str, device_type: str, timestamp: datetime) -> None:
-        """Update device status with timestamp and type information."""
-        self._device_statuses[device_id] = {
-            'status': status,
-            'timestamp': timestamp.isoformat(),
-            'type': device_type
-        }
-        self._save_device_statuses()
     
     def _load_config_thresholds(self) -> None:
         """
@@ -184,7 +139,8 @@ class DecisionEngine(QObject):
         thresholds and restart settings used for automated decisions.
         """
         try:
-            config = ConfigService()
+            # Use the injected config service
+            config = self.config_service
             
             # Load device thresholds
             self.relay_fail_threshold = int(config.get("devices", "relay_fail_threshold", DEFAULT_RELAY_FAIL))
@@ -226,6 +182,11 @@ class DecisionEngine(QObject):
         )
         self.restart_evaluator = RestartEvaluator(
             self.logger, self.minutes_to_restart, self.restart_cooldown_minutes
+        )
+        self.restart_manager = RestartManager(
+            self.minutes_to_restart, 
+            self.restart_cooldown_minutes, 
+            self.check_eintzofia_running_enabled
         )
         
         # Start the log processor (no timer needed)
@@ -308,7 +269,14 @@ class DecisionEngine(QObject):
             self.logger.error(f"Log processor error: {e}")
             processed_count = 0
         
-        # Step 2: Evaluate devices and make decisions
+        # Step 2: Check Ein Tzofia status if enabled
+        try:
+            self._check_and_start_eintzofia()
+            self.logger.debug("Ein Tzofia check completed")
+        except Exception as e:
+            self.logger.error(f"Ein Tzofia check error: {e}")
+        
+        # Step 3: Evaluate devices and make decisions
         try:
             self._evaluate_devices()
             self.logger.debug("Device evaluation completed")
@@ -322,8 +290,44 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.error(f"Restart evaluation error: {e}")
         
+        # Step 4: Send pulse to server
+        try:
+            self._pulse_to_server()
+            self.logger.debug("Server pulse completed")
+        except Exception as e:
+            self.logger.error(f"Server pulse error: {e}")
+        
         # Emit completion signal
         self.cycle_completed.emit(processed_count)
+    
+    def _check_and_start_eintzofia(self) -> None:
+        """Check if Ein Tzofia is running and start it if needed (when enabled)."""
+        if not self.check_eintzofia_running_enabled:
+            return
+            
+        try:
+            # Use existing RestartManager method to check if Ein Tzofia is running
+            if not self.restart_manager._is_eintzofia_running():
+                self.logger.warning("Ein Tzofia is not running - attempting to start")
+                
+                # Get Ein Tzofia path and start it using initialized OSManager
+                try:
+                    eintzofia_path = self.os_manager.get_EinTzofia_path()
+                    if eintzofia_path and Path(eintzofia_path).exists():
+                        success = self.os_manager.open_file(eintzofia_path)
+                        if success:
+                            self.logger.info("Ein Tzofia started successfully")
+                        else:
+                            self.logger.error("Failed to start Ein Tzofia")
+                    else:
+                        self.logger.warning("Ein Tzofia path not found or doesn't exist - skipping auto-start")
+                except Exception as path_error:
+                    self.logger.warning(f"Could not get Ein Tzofia path: {path_error} - skipping auto-start")
+            else:
+                self.logger.debug("Ein Tzofia is running normally")
+                
+        except Exception as e:
+            self.logger.error(f"Error checking/starting Ein Tzofia: {e}")
     
     def _evaluate_devices(self) -> None:
         """Evaluate all devices and make decisions (called by timer)."""
@@ -389,101 +393,50 @@ class DecisionEngine(QObject):
             self.logger.debug(f"No evaluation logic for device type: {device_type}")
             return None
     
-    def _is_eintzofia_running(self) -> bool:
-        """
-        Check if Ein Tzofia process is currently running.
-        
-        Returns:
-            True if Ein Tzofia is running, False otherwise
-        """
-        try:
-            for proc in psutil.process_iter(['name', 'exe']):
-                try:
-                    # Check both process name and executable path
-                    proc_name = proc.info.get('name', '').lower()
-                    proc_exe = proc.info.get('exe', '').lower()
-                    
-                    # Look for processes that contain "eintzofia" in name or executable path
-                    if 'eintzofia' in proc_name or (proc_exe and 'eintzofia' in proc_exe):
-                        self.logger.debug(f"Found Ein Tzofia process: {proc.info}")
-                        return True
-                        
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    # Process might have ended between iterations or we don't have access
-                    continue
-                    
-            return False
-            
-        except Exception as e:
-            self.logger.warning(f"Error checking if Ein Tzofia is running: {e}")
-            # If we can't check, assume it's not running (safer for restart)
-            return False
-
     def _evaluate_restart_conditions(self) -> None:
         """Evaluate if restart conditions are met and restart computer if needed."""
         try:
-            # Check basic restart conditions first
-            if not self.restart_evaluator.should_restart(
-                self._device_statuses, 
-                self._restart_info, 
+            # Use RestartManager to handle all restart logic
+            should_restart, reason = self.restart_manager.should_restart_computer(
+                self.device_status_manager.get_device_statuses(),
+                self.device_status_manager.get_restart_info(),
                 self._start_time
-            ):
-                # Log why restart was not performed (if there are failed thread devices)
-                failed_device = self.restart_evaluator._find_failed_thread_device(self._device_statuses)
-                if failed_device:
-                    engine_runtime = datetime.now() - self._start_time if self._start_time else timedelta(0)
-                    self.logger.info(f"Thread device failure detected but not restarting - engine runtime: {engine_runtime}")
-                    print(f"Thread device failure detected but not restarting - engine runtime: {engine_runtime}")  # TODO: Remove this print later
-                return
+            )
             
-            # If basic conditions are met, check Ein Tzofia running condition if enabled
-            if self.check_eintzofia_running_enabled:
-                if not self._is_eintzofia_running():
-                    self.logger.info("Thread device failure detected but Ein Tzofia is NOT running - restart blocked")
-                    print("Thread device failure detected but Ein Tzofia is NOT running - restart blocked")  # TODO: Remove this print later
-                    return
-                else:
-                    self.logger.info("Ein Tzofia is running - restart approved")
-                    print("Ein Tzofia is running - restart approved")  # TODO: Remove this print later
+            # Log the decision
+            if should_restart:
+                self.logger.info(f"Restart approved: {reason}")
+                print(f"Restart approved: {reason}")  # TODO: Remove this print later
+                
+                # Execute restart and update restart info
+                updated_restart_info = self.restart_manager.execute_restart(
+                    self.device_status_manager.get_restart_info()
+                )
+                self.device_status_manager.update_restart_info(updated_restart_info)
             else:
-                self.logger.info("Ein Tzofia running check disabled - restart approved")
-                print("Ein Tzofia running check disabled - restart approved")  # TODO: Remove this print later
-            
-            # All conditions met - proceed with restart
-            self.logger.info("RESTARTING COMPUTER due to thread device failure")
-            print("RESTARTING COMPUTER due to thread device failure")  # TODO: Remove this print later
-            self._record_restart()
-            # TODO: Add actual computer restart logic here
-            
+                self.logger.info(f"Restart blocked: {reason}")
+                if "Thread device failure detected" in reason:
+                    print(f"{reason}")  # TODO: Remove this print later
+                
         except Exception as e:
             self.logger.error(f"Error checking restart conditions: {e}")
     
-    def _record_restart(self) -> None:
-        """Record that a restart has occurred by updating the restart info."""
+    def _pulse_to_server(self) -> None:
+        """Send pulse to server at the end of monitoring cycle."""
         try:
-            restart_count = self._restart_info.get('restart_count', 0) + 1
-            restart_record = self.restart_evaluator.create_restart_record()
-            restart_record['restart_count'] = restart_count
-            
-            self._restart_info = {
-                'last_restart_time': restart_record['last_restart_time'],
-                'restart_count': restart_count
-            }
-            
-            self._save_device_statuses()  # Save the updated restart info
-            self.logger.info(f"Recorded restart #{restart_count} at {restart_record['timestamp']}")
-            
+            self.logger.debug("Sending pulse to server")
+            result = self.server_manager.pulse_to_server()
+            self.logger.debug(f"Server pulse result: {result}")
         except Exception as e:
-            self.logger.error(f"Failed to record restart: {e}")
+            self.logger.error(f"Failed to send pulse to server: {e}")
     
     def _ensure_device_tracked(self, device: DeviceInfo) -> None:
         """Ensure device is tracked in the json file"""
         device_id = device.device_id
         
         # If this is the first time seeing this device, set baseline to 'success'
-        if device_id not in self._device_statuses:
+        if self.device_status_manager.ensure_device_tracked(device_id, device.device_type, device.last_updated):
             self.logger.info(f"NEW DEVICE DETECTED: {device_id}")
-            self._update_device_status(device_id, 'success', device.device_type, device.last_updated)
     
     def _get_device_alert_type(self, device_type: str) -> AlertType:
         """Map device type to alert type directly."""
@@ -550,7 +503,7 @@ class DecisionEngine(QObject):
         - Updating persistent status storage
         """
         device_id = device.device_id
-        previous_status = self._get_device_status(device_id)
+        previous_status = self.device_status_manager.get_device_status(device_id)
         
         # Always create alerts for failed devices (let alert DB handle deduplication)
         if new_status == 'fail':
@@ -575,20 +528,12 @@ class DecisionEngine(QObject):
         
         # Update status tracking if status actually changed
         if new_status != previous_status:
-            self._update_device_status(device_id, new_status, device.device_type, device.last_updated)
+            self.device_status_manager.update_device_status(device_id, new_status, device.device_type, device.last_updated)
     
     @staticmethod
     def reset_statuses() -> None:
         """Reset decision engine statuses (for testing)."""
-        try:
-            status_file = DecisionEngine._get_status_file_path()
-            if status_file.exists():
-                status_file.unlink()
-                print(f"Decision engine statuses reset: {status_file}")
-            else:
-                print("No status file found to reset")
-        except Exception as e:
-            print(f"Error resetting statuses: {e}")
+        DeviceStatusManager.reset_statuses()
 
 
 def main():
@@ -604,8 +549,11 @@ def main():
         # Use current working directory for testing
         db_directory = Path.cwd()
         
+        # Create shared config service
+        config_service = ConfigService()
+        
         # Create worker objects
-        decision_engine = DecisionEngine(db_directory)
+        decision_engine = DecisionEngine(db_directory, db_directory, config_service)
         log_processor = LogProcessor(
             db_directory=db_directory,
             batch_interval=2.0

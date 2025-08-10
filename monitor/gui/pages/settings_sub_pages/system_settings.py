@@ -3,6 +3,7 @@
 from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QWidget, QLineEdit, QPushButton, 
                                QFormLayout, QCheckBox, QMessageBox, QLabel)
 from PySide6.QtCore import Qt
+from monitor.core.os_manager import OSManager
 
 class SystemSettings(QWidget):
     """System settings tab widget"""
@@ -10,6 +11,7 @@ class SystemSettings(QWidget):
     def __init__(self, config_service):
         super().__init__()
         self._config = config_service
+        self._os_manager = OSManager(config_service)  # Initialize OSManager
         self._setup_ui()
         self._load_from_config()
     
@@ -35,18 +37,16 @@ class SystemSettings(QWidget):
         self._check_eintzofia_running_checkbox.toggled.connect(self._save_to_config)
         form_layout.addRow("", self._check_eintzofia_running_checkbox)
 
-        # Open Ein Tzofia button
-        self._open_ein_tzofia_btn = QPushButton("Open Ein Tzofia")
+        # Open/Restart Ein Tzofia button
+        self._open_ein_tzofia_btn = QPushButton("Open/Restart Ein Tzofia")
         self._open_ein_tzofia_btn.setObjectName("open-button")
         self._open_ein_tzofia_btn.clicked.connect(self._open_ein_tzofia)
         form_layout.addRow("", self._open_ein_tzofia_btn)
 
-        # Close Ein Tzofia button
-        self._close_ein_tzofia_btn = QPushButton("Close Ein Tzofia")
-        self._close_ein_tzofia_btn.setObjectName("close-button")
-        self._close_ein_tzofia_btn.clicked.connect(self._confirm_close_ein_tzofia)
-        form_layout.addRow("", self._close_ein_tzofia_btn)
-
+        # Restart/Snooze Time title
+        restart_time_title = QLabel("Restart/Snooze Time (minutes):")
+        form_layout.addRow("", restart_time_title)
+        
         # Minutes to Restart input (combined with snooze time)
         restart_time_layout = QHBoxLayout()
         
@@ -65,7 +65,7 @@ class SystemSettings(QWidget):
         restart_time_layout.addWidget(self._restart_time_display)
         restart_time_layout.addWidget(self._edit_restart_time_btn)
         
-        form_layout.addRow("Restart/Snooze Time (minutes):", restart_time_layout)
+        form_layout.addRow("", restart_time_layout)
 
         layout.addLayout(form_layout)
 
@@ -120,24 +120,48 @@ class SystemSettings(QWidget):
                 QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
     
     def _open_ein_tzofia(self):
-        """Open Ein Tzofia - placeholder implementation"""
-        print("Opening Ein Tzofia...")
-        # TODO: Implement open logic
-    
-    def _confirm_close_ein_tzofia(self):
-        """Show confirmation dialog for closing Ein Tzofia"""
-        reply = QMessageBox.question(
-            self,
-            "Confirm Close",
-            "Are you sure you want to close Ein Tzofia?\n\nThis will terminate the application.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            # TODO: Implement close logic
-            print("Closing Ein Tzofia...")
-            # You can add the actual close implementation here
+        """Open Ein Tzofia using OSManager"""
+        try:
+            print("Opening Ein Tzofia...")
+            
+            # Get EinTzofia path from config
+            eintzofia_path = self._config.get("general", "eintzofia_path", "")
+            
+            if not eintzofia_path:
+                QMessageBox.warning(
+                    self, 
+                    "EinTzofia Path Not Found", 
+                    "EinTzofia path is not configured.\n\n"
+                    "Please set the EinTzofia path in General settings first."
+                )
+                return
+            
+            # Use OSManager to open the file
+            success = self._os_manager.open_file(eintzofia_path)
+            
+            if success:
+                print(f"Successfully opened EinTzofia: {eintzofia_path}")
+                QMessageBox.information(
+                    self,
+                    "EinTzofia Opened",
+                    "EinTzofia has been opened successfully."
+                )
+            else:
+                print(f"Failed to open EinTzofia: {eintzofia_path}")
+                QMessageBox.warning(
+                    self,
+                    "Failed to Open",
+                    f"Failed to open EinTzofia.\n\nPath: {eintzofia_path}\n\n"
+                    "Please check if the file exists and is executable."
+                )
+                
+        except Exception as e:
+            print(f"Error opening EinTzofia: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while opening EinTzofia:\n\n{str(e)}"
+            )
     
     def get_enable_restart(self) -> bool:
         """Get the enable restart checkbox state"""

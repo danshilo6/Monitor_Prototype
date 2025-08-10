@@ -27,7 +27,17 @@ class TestDecisionEngine:
     @pytest.fixture
     def decision_engine(self, temp_db_dir):
         """Create a DecisionEngine instance for testing"""
-        engine = DecisionEngine(temp_db_dir)
+        # Create a mock config service
+        mock_config = Mock(spec=ConfigService)
+        mock_config.get.side_effect = lambda section, key, default: {
+            ('devices', 'relay_fail_threshold'): '150',
+            ('devices', 'camera_fail_threshold'): '0.7',
+            ('system', 'minutes_to_restart'): '3',
+            ('system', 'restart_cooldown_minutes'): '30',
+            ('system', 'check_eintzofia_running'): True
+        }.get((section, key), default)
+        
+        engine = DecisionEngine(temp_db_dir, temp_db_dir, mock_config)
         yield engine
         # Ensure cleanup
         if hasattr(engine, 'devices_db') and engine.devices_db:
@@ -110,7 +120,17 @@ class TestDeviceEvaluation:
     @pytest.fixture
     def decision_engine(self, temp_db_dir):
         """Create a DecisionEngine instance for testing"""
-        engine = DecisionEngine(temp_db_dir)
+        # Create a mock config service
+        mock_config = Mock(spec=ConfigService)
+        mock_config.get.side_effect = lambda section, key, default: {
+            ('devices', 'relay_fail_threshold'): '100',
+            ('devices', 'camera_fail_threshold'): '0.6',
+            ('system', 'minutes_to_restart'): '3',
+            ('system', 'restart_cooldown_minutes'): '30',
+            ('system', 'check_eintzofia_running'): True
+        }.get((section, key), default)
+        
+        engine = DecisionEngine(temp_db_dir, temp_db_dir, mock_config)
         # Set known thresholds for testing
         engine.relay_fail_threshold = 100
         engine.camera_fail_threshold = 0.6
@@ -324,7 +344,11 @@ class TestDeviceStatusTracking:
     @pytest.fixture
     def decision_engine(self, temp_db_dir):
         """Create a DecisionEngine instance for testing"""
-        engine = DecisionEngine(temp_db_dir)
+        # Create a mock config service
+        mock_config = Mock(spec=ConfigService)
+        mock_config.get.side_effect = lambda section, key, default: default
+        
+        engine = DecisionEngine(temp_db_dir, temp_db_dir, mock_config)
         yield engine
         if hasattr(engine, 'devices_db') and engine.devices_db:
             engine.devices_db.close()
@@ -345,7 +369,10 @@ class TestDeviceStatusTracking:
         assert decision_engine._get_device_status("test_device") == "fail"
         
         # Create new engine instance to test loading
-        new_engine = DecisionEngine(decision_engine.db_directory)
+        mock_config = Mock(spec=ConfigService)
+        mock_config.get.side_effect = lambda section, key, default: default
+        
+        new_engine = DecisionEngine(decision_engine.data_directory, decision_engine.data_directory, mock_config)
         assert new_engine._get_device_status("test_device") == "fail"
         
         new_engine.devices_db.close()
@@ -458,7 +485,11 @@ class TestTimerBasedOperation:
     @pytest.fixture
     def decision_engine(self, temp_db_dir):
         """Create a DecisionEngine instance for testing"""
-        engine = DecisionEngine(temp_db_dir)
+        # Create a mock config service
+        mock_config = Mock(spec=ConfigService)
+        mock_config.get.side_effect = lambda section, key, default: default
+        
+        engine = DecisionEngine(temp_db_dir, temp_db_dir, mock_config)
         yield engine
         if hasattr(engine, 'devices_db') and engine.devices_db:
             engine.devices_db.close()
@@ -579,7 +610,11 @@ class TestIntegration:
     
     def test_threaded_timer_operation(self, temp_db_dir, app):
         """Test DecisionEngine timer operation on separate thread"""
-        decision_engine = DecisionEngine(temp_db_dir)
+        # Create a mock config service
+        mock_config = Mock(spec=ConfigService)
+        mock_config.get.side_effect = lambda section, key, default: default
+        
+        decision_engine = DecisionEngine(temp_db_dir, temp_db_dir, mock_config)
         decision_thread = QThread()
         
         evaluation_count = {'count': 0}
