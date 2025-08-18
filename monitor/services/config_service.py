@@ -13,8 +13,10 @@ class ConfigService:
         self._config_path = Path(config_path)
         self._config: Dict[str, Any] = {}
         self._lock = threading.RLock()  # Re-entrant lock for thread safety
+        self._is_first_run = not self._config_path.exists()  # Track first run
         self.logger.info(f"Initializing config service: {config_path}")
         self._load()
+        self._set_defaults_on_first_run()  # Set defaults after loading
 
     def _acquire_lock(self, timeout=5):
         acquired = self._lock.acquire(timeout=timeout)
@@ -44,10 +46,82 @@ class ConfigService:
 
     def _default_config(self) -> Dict[str, Any]:
         return {
-            "general": {"location_name": "", "monitor_program_path": ""},
-            "system": {"enable_restart": False, "minutes_to_restart": "", "startup_snooze_time": ""},
-            "devices": {"relay_fail_threshold": "", "camera_fail_threshold": "", "camera_log_minutes": ""}
+            "general": {
+                "location_name": "",
+                "eintzofia_path": ""
+            },
+            "versions": {
+                "monitor_version": "12-07-25",
+                "ein_tzofia_version": "12-07-25"
+            },
+            "system": {
+                "enable_restart": True,
+                "minutes_to_restart": "5",
+                "restart_cooldown_minutes": "2",
+                "startup_snooze_time": "5",
+                "check_eintzofia_running": True,
+                "decision_cycle_seconds": "180"
+            },
+            "devices": {
+                "relay_fail_threshold": "30",
+                "camera_fail_threshold": "0.5",
+                "camera_log_minutes": "20",
+                "history_length": "50"
+            },
+            "device": {
+                "signed_id": ""
+            }
         }
+
+    def _set_defaults_on_first_run(self):
+        """Set default values only if this is the first time running the app."""
+        if not self._is_first_run:
+            return
+        
+        if self._acquire_lock():
+            try:
+                self.logger.info("First run detected - setting default configuration values")
+                defaults = self._default_config()
+                
+                # Only set values that don't exist or are empty
+                for section_name, section_data in defaults.items():
+                    if section_name not in self._config:
+                        self._config[section_name] = {}
+                    
+                    for key, default_value in section_data.items():
+                        # Skip location_name and signed_id - user should set these
+                        if key in ["location_name", "signed_id"]:
+                            continue
+                        
+                        current_value = self._config[section_name].get(key, "")
+                        if not current_value:  # Empty string, None, or missing
+                            self._config[section_name][key] = default_value
+                            self.logger.debug(f"Set default: {section_name}.{key} = {default_value}")
+                
+                self.save()  # Save the updated config
+                self.logger.info("Default configuration values applied")
+                
+            finally:
+                self._release_lock()
+
+    def is_first_run(self) -> bool:
+        """Check if this is the first time the application is running."""
+        return self._is_first_run
+
+    def set_eintzofia_path_if_first_run(self, detect_path_func):
+        """Set EinTzofia path on first run using the provided detection function."""
+        if not self._is_first_run:
+            return
+            
+        current_path = self.get("general", "eintzofia_path", "")
+        if not current_path:
+            self.logger.info("First run: attempting to auto-detect EinTzofia path")
+            detected_path = detect_path_func()
+            if detected_path:
+                self.set("general", "eintzofia_path", detected_path)
+                self.logger.info(f"Auto-detected and set EinTzofia path: {detected_path}")
+            else:
+                self.logger.warning("Could not auto-detect EinTzofia path on first run")
 
     def save(self):
         if self._acquire_lock():

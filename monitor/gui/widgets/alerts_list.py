@@ -79,7 +79,7 @@ class AlertsList(QWidget):
         #desc_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         # Use monospace font for technical data
         font = desc_item.font()
-        font.setFamily("Consolas, Monaco, monospace")
+        font.setFamily("ui-monospace, 'Cascadia Code', 'Source Code Pro', Consolas, 'Courier New', monospace")
         desc_item.setFont(font)
         self._table.setItem(row, 2, desc_item)
         

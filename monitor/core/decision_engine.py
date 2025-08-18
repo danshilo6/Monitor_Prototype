@@ -150,6 +150,19 @@ class DecisionEngine(QObject):
             self.minutes_to_restart = int(config.get("system", "minutes_to_restart", DEFAULT_RESTART))
             self.restart_cooldown_minutes = int(config.get("system", "restart_cooldown_minutes", DEFAULT_RESTART_COOLDOWN))
             self.check_eintzofia_running_enabled = config.get("system", "check_eintzofia_running", DEFAULT_CHECK_EINTZOFIA_RUNNING)
+
+            # Load decision engine cycle interval (seconds) if provided
+            raw_cycle = config.get("system", "decision_cycle_seconds", self.cycle_interval)
+            try:
+                # Accept string or numeric; ignore empty string
+                if raw_cycle not in (None, ""):
+                    new_cycle = float(raw_cycle)
+                    if new_cycle > 0:
+                        self.cycle_interval = new_cycle
+                    else:
+                        self.logger.warning(f"decision_cycle_seconds must be > 0, got {new_cycle}; keeping {self.cycle_interval}")
+            except (ValueError, TypeError):
+                self.logger.warning(f"Invalid decision_cycle_seconds '{raw_cycle}', keeping {self.cycle_interval}")
             
             self.logger.info("Loaded Config")
             
@@ -255,6 +268,8 @@ class DecisionEngine(QObject):
         
         This method processes logs first, then evaluates devices sequentially.
         """
+        print("DECISION ENGINE CYCLE")
+
         if not self._running:
             self.logger.warning("DecisionEngine is not running, cannot run cycle")
             return
@@ -271,7 +286,7 @@ class DecisionEngine(QObject):
         
         # Step 2: Check Ein Tzofia status if enabled
         try:
-            self._check_and_start_eintzofia()
+            #self._check_and_start_eintzofia()
             self.logger.debug("Ein Tzofia check completed")
         except Exception as e:
             self.logger.error(f"Ein Tzofia check error: {e}")
@@ -382,8 +397,7 @@ class DecisionEngine(QObject):
                           DeviceType.THI.value]:
             return self.consecutive_count_evaluator.evaluate(device)
             
-        elif device_type in [DeviceType.THREAD.value, DeviceType.DEVICE_MODE_THREAD.value, 
-                            DeviceType.SYSTEM_HEALTH.value]:
+        elif device_type == DeviceType.THREAD.value:
             return self.timeout_evaluator.evaluate(device)
             
         elif device_type == DeviceType.CAMERA.value:

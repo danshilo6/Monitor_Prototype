@@ -1,6 +1,7 @@
 ---
 applyTo: '**'
 ---
+never import inside methods. always import at the top of the file.
 
 Always provide clear and concise answers to questions, and ensure that the information is accurate and relevant. If you do not know the answer to a question, it is better to acknowledge this rather than provide incorrect or misleading information.
 

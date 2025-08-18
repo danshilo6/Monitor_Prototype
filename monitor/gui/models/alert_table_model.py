@@ -28,8 +28,6 @@ class AlertTableModel(QAbstractTableModel):
             AlertType.SOFTWARE: "software.svg",
             AlertType.GROUP: "group.svg",
             AlertType.THREAD: "software.svg",  # All thread alerts use software icon
-            AlertType.DEVICE_MODE_THREAD: "software.svg",  # All thread alerts use software icon
-            AlertType.SYSTEM_HEALTH: "software.svg",  # All thread alerts use software icon
             AlertType.COMPORT: "comport.svg",
             AlertType.THI: "THI.svg",
             AlertType.UNKNOWN: "warning.svg"  # Unknown alerts use warning icon
@@ -65,7 +63,7 @@ class AlertTableModel(QAbstractTableModel):
             if column == 0:  # Type - show text
                 return alert.alert_type.value
             elif column == 1:  # Description
-                return alert.description
+                return str(alert.description)  # Ensure string conversion
             elif column == 2:  # Timestamp
                 return alert.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             elif column == 3:  # Action column (handled by delegate, no text needed)
@@ -82,6 +80,14 @@ class AlertTableModel(QAbstractTableModel):
                 return Qt.AlignCenter
             elif column == 3:  # Center align action column
                 return Qt.AlignCenter
+        
+        elif role == Qt.FontRole:
+            # Ensure consistent font across platforms
+            from PySide6.QtGui import QFont
+            font = QFont("DejaVu Sans", 10)
+            if column == 1:  # Description column - use monospace
+                font.setFamily("DejaVu Sans Mono")
+            return font
         
         return None
     

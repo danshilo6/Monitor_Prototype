@@ -45,6 +45,12 @@ class DevicesSettings(QWidget):
         # No returnPressed for last field (nowhere to go)
         form_layout.addRow("Minutes Since Last Camera Log:", self._camera_log_minutes_input)
 
+        # Device history length input
+        self._history_length_input = QLineEdit()
+        self._history_length_input.setObjectName("settings-input")
+        self._history_length_input.setPlaceholderText("Enter history length (count or minutes)...")
+        form_layout.addRow("History Length:", self._history_length_input)
+
         # Save button
         self._save_button = QPushButton("Save Settings")
         self._save_button.setObjectName("blue-button")
@@ -61,21 +67,25 @@ class DevicesSettings(QWidget):
         self._relay_fail_threshold_input.blockSignals(True)
         self._camera_fail_threshold_input.blockSignals(True)
         self._camera_log_minutes_input.blockSignals(True)
+        self._history_length_input.blockSignals(True)
         
         # Load values
         self._relay_fail_threshold_input.setText(self._config.get("devices", "relay_fail_threshold", ""))
         self._camera_fail_threshold_input.setText(self._config.get("devices", "camera_fail_threshold", ""))
         self._camera_log_minutes_input.setText(self._config.get("devices", "camera_log_minutes", ""))
+        self._history_length_input.setText(self._config.get("devices", "history_length", ""))
         
         # Re-enable signals
         self._relay_fail_threshold_input.blockSignals(False)
         self._camera_fail_threshold_input.blockSignals(False)
         self._camera_log_minutes_input.blockSignals(False)
+        self._history_length_input.blockSignals(False)
 
     def _save_to_config(self):
         self._config.set("devices", "relay_fail_threshold", self._relay_fail_threshold_input.text())
         self._config.set("devices", "camera_fail_threshold", self._camera_fail_threshold_input.text())
         self._config.set("devices", "camera_log_minutes", self._camera_log_minutes_input.text())
+        self._config.set("devices", "history_length", self._history_length_input.text())
     
     def get_relay_fail_threshold(self) -> str:
         """Get the relay fail count threshold value"""
@@ -89,6 +99,9 @@ class DevicesSettings(QWidget):
         """Get the minutes since last camera log value"""
         return self._camera_log_minutes_input.text()
     
+    def get_history_length(self) -> str:
+        return self._history_length_input.text()
+    
     def set_relay_fail_threshold(self, threshold: str):
         """Set the relay fail count threshold value"""
         self._relay_fail_threshold_input.setText(threshold)
@@ -101,6 +114,9 @@ class DevicesSettings(QWidget):
         """Set the minutes since last camera log value"""
         self._camera_log_minutes_input.setText(minutes)
     
+    def set_history_length(self, value: str):
+        self._history_length_input.setText(value)
+    
     def _focus_next_field(self):
         """Focus the next input field when Enter is pressed"""
         current_widget = self.sender()
@@ -109,6 +125,8 @@ class DevicesSettings(QWidget):
             self._camera_fail_threshold_input.setFocus()
         elif current_widget == self._camera_fail_threshold_input:
             self._camera_log_minutes_input.setFocus()
+        elif current_widget == self._camera_log_minutes_input:
+            self._history_length_input.setFocus()
 
     def _confirm_save(self):
         """Show confirmation dialog before saving device settings."""

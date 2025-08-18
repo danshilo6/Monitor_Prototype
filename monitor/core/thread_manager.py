@@ -171,11 +171,21 @@ class ThreadManager(QObject):
             
             # Create thread and worker
             self.decision_engine_thread = QThread()
+            # Prefer config value for decision cycle if present
+            try:
+                cfg_cycle = self.config_service.get("system", "decision_cycle_seconds", "")
+                if cfg_cycle not in (None, ""):
+                    cycle_val = float(cfg_cycle)
+                    if cycle_val > 0:
+                        self.cycle_interval = cycle_val
+            except Exception as e:
+                self.logger.warning(f"Invalid decision_cycle_seconds in config: {e} - using {self.cycle_interval}")
+
             self.decision_engine = DecisionEngine(
                 logs_directory=self.logs_directory,
                 data_directory=self.data_directory,
                 config_service=self.config_service,
-                cycle_interval=self.cycle_interval
+                cycle_interval=self.cycle_interval,
             )
             
             # Move worker to thread

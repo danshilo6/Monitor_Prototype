@@ -119,13 +119,19 @@ class DevicesDatabase:
                 else:
                     count_col = '1'  # Default value
                 
+                # Check if device_type column exists in old table
+                if 'device_type' in old_columns:
+                    device_type_col = 'device_type'
+                else:
+                    device_type_col = "'unknown'"  # Default to 'unknown' for old records
+                
                 conn.execute(f'''
                     INSERT INTO devices_new 
                     (device_id, device_type, status, last_log_status, last_log_consecutive_count, 
                      success_count, fail_count, recent_pattern, last_updated)
                     SELECT 
                         device_id,
-                        'unknown' as device_type,
+                        COALESCE({device_type_col}, 'unknown') as device_type,
                         {status_col} as status,
                         COALESCE(last_log_status, {status_col}) as last_log_status,
                         COALESCE({count_col}, 1) as last_log_consecutive_count,

@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 from typing import Optional
 import pandas as pd
+from datetime import datetime
 from dataclasses import replace
 from monitor.core.log_reader import LogReader
 from monitor.log_setup import get_logger
@@ -65,9 +66,7 @@ class LogProcessor:
         
         # Expected system threads that should always be monitored
         self._expected_threads = [
-            {'id': 'thread', 'type': DeviceType.THREAD},
-            {'id': 'device_mode_thread', 'type': DeviceType.DEVICE_MODE_THREAD}, 
-            {'id': 'system_health', 'type': DeviceType.SYSTEM_HEALTH}
+            {'id': 'thread', 'type': DeviceType.THREAD}
         ]
         
         self.logger.info("LogProcessor initialized")
@@ -79,9 +78,6 @@ class LogProcessor:
             return
         
         self._running = True
-        
-        # Ensure expected threads exist in database (one-time setup)
-        self._ensure_expected_threads_exist()
         
         self.logger.info("LogProcessor started")
     
@@ -103,7 +99,7 @@ class LogProcessor:
     
     def _ensure_expected_threads_exist(self) -> None:
         """Add expected system threads to database if missing (one-time setup)."""
-        from datetime import datetime
+
         
         current_time = datetime.now()
         devices_in_memory = self.devices_db.get_all()
@@ -130,7 +126,10 @@ class LogProcessor:
     
     def _determine_device_type(self, device_name: str) -> DeviceType:
         """
-        Determine device type based on device name patterns.
+        DEPRECATED: Determine device type based on device name patterns.
+        
+        This method is no longer used as device types are now provided
+        directly in the log entries via the 'device_type' column.
         
         Args:
             device_name: The device identifier/name
@@ -149,7 +148,7 @@ class LogProcessor:
             return DeviceType.CAMERA
         
         # Thread: specific thread names
-        thread_names = ["thread", "device_mode_thread", "system_health"]
+        thread_names = ["thread"]
         if device_name.lower() in thread_names:
             return DeviceType.THREAD
         
@@ -182,21 +181,21 @@ class LogProcessor:
         # Default to unknown if no pattern matches
         return DeviceType.UNKNOWN
     
-    def _create_new_device(self, device_id: str, log_status: str) -> DeviceInfo:
+    def _create_new_device(self, device_id: str, device_type: str, log_status: str) -> DeviceInfo:
         """
         Create a new device with initial status.
         
         Args:
             device_id: The device identifier
+            device_type: The device type from the log entry
             log_status: The initial status from the first log entry
             
         Returns:
             New DeviceInfo instance
         """
-        device_type = self._determine_device_type(device_id)
         device_info = DeviceInfo(
             device_id=device_id,
-            device_type=str(device_type),
+            device_type=device_type,
             status=log_status,  # Initial status from first log
             last_log_status=log_status,
             last_log_consecutive_count=1,
@@ -271,6 +270,7 @@ class LogProcessor:
             if new_logs.empty:
                 # No new logs found - debug log this
                 self.logger.debug("No new log entries found in this batch")
+                print("no new logs")
                 return 0
             
             self.logger.debug(f"Found {len(new_logs)} new log entries to process")
@@ -283,6 +283,7 @@ class LogProcessor:
             processed_count = 0
             for _, log_entry in new_logs.iterrows():
                 device_id = log_entry.get('device', '')
+                device_type = log_entry.get('device_type', 'unknown')  # Get device_type from log entry
                 log_status = log_entry.get('status', '')
                 
                 if not device_id or not log_status:
@@ -296,8 +297,8 @@ class LogProcessor:
                     max_history = 50  # TODO: Get from config based on device_type
                     updated_device = self._update_existing_device(device_info, log_status, max_history)
                 else:
-                    # Create new device
-                    updated_device = self._create_new_device(device_id, log_status)
+                    # Create new device using device_type from log entry
+                    updated_device = self._create_new_device(device_id, device_type, log_status)
                 
                 # Store updated device back in memory
                 devices_in_memory[device_id] = updated_device

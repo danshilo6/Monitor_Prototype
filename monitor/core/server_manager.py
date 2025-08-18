@@ -1,10 +1,8 @@
-import sys
 from pathlib import Path
 from monitor.log_setup import get_logger
 
-# Import legacy ServerManager
-sys.path.append(str(Path(__file__).parent.parent.parent / "legacy_code"))
-from server_class import ServerManager as LegacyServerManager
+# Import legacy ServerManager via package so PyInstaller discovers it
+from legacy_code.server_class import ServerManager as LegacyServerManager
 
 
 class MockParentForServer:

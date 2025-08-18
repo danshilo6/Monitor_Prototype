@@ -67,6 +67,22 @@ class SystemSettings(QWidget):
         
         form_layout.addRow("", restart_time_layout)
 
+        # Decision Engine Cycle Timer section (properly indented inside method)
+        decision_cycle_title = QLabel("Decision Engine Cycle (seconds):")
+        form_layout.addRow("", decision_cycle_title)
+
+        decision_cycle_layout = QHBoxLayout()
+        self._decision_cycle_display = QLineEdit()
+        self._decision_cycle_display.setObjectName("settings-display")
+        self._decision_cycle_display.setReadOnly(True)
+        self._decision_cycle_display.setPlaceholderText("Enter cycle time in seconds...")
+        self._edit_decision_cycle_btn = QPushButton("Edit")
+        self._edit_decision_cycle_btn.setObjectName("settings-button")
+        self._edit_decision_cycle_btn.clicked.connect(self._edit_decision_cycle)
+        decision_cycle_layout.addWidget(self._decision_cycle_display)
+        decision_cycle_layout.addWidget(self._edit_decision_cycle_btn)
+        form_layout.addRow("", decision_cycle_layout)
+
         layout.addLayout(form_layout)
 
         # Add stretch to push content to top
@@ -77,17 +93,24 @@ class SystemSettings(QWidget):
         self._enable_restart_checkbox.blockSignals(True)
         self._check_eintzofia_running_checkbox.blockSignals(True)
         self._restart_time_display.blockSignals(True)
+        if hasattr(self, '_decision_cycle_display'):
+            self._decision_cycle_display.blockSignals(True)
         
         # Load values (use the same value for both restart and snooze)
         self._enable_restart_checkbox.setChecked(self._config.get("system", "enable_restart", False))
         self._check_eintzofia_running_checkbox.setChecked(self._config.get("system", "check_eintzofia_running", True))
         restart_time = self._config.get("system", "minutes_to_restart", "")
         self._restart_time_display.setText(str(restart_time))
+        decision_cycle = self._config.get("system", "decision_cycle_seconds", "")
+        if hasattr(self, '_decision_cycle_display'):
+            self._decision_cycle_display.setText(str(decision_cycle))
         
         # Re-enable signals
         self._enable_restart_checkbox.blockSignals(False)
         self._check_eintzofia_running_checkbox.blockSignals(False)
         self._restart_time_display.blockSignals(False)
+        if hasattr(self, '_decision_cycle_display'):
+            self._decision_cycle_display.blockSignals(False)
 
     def _save_to_config(self):
         self._config.set("system", "enable_restart", self._enable_restart_checkbox.isChecked())
@@ -96,6 +119,8 @@ class SystemSettings(QWidget):
         restart_time = self._restart_time_display.text()
         self._config.set("system", "minutes_to_restart", restart_time)
         self._config.set("system", "startup_snooze_time", restart_time)
+        if hasattr(self, '_decision_cycle_display'):
+            self._config.set("system", "decision_cycle_seconds", self._decision_cycle_display.text())
     
     def _edit_restart_time(self):
         """Open dialog to edit restart/snooze time"""
@@ -162,6 +187,24 @@ class SystemSettings(QWidget):
                 "Error",
                 f"An error occurred while opening EinTzofia:\n\n{str(e)}"
             )
+
+    def _edit_decision_cycle(self):
+        """Open dialog to edit decision engine cycle seconds"""
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+        current = self._decision_cycle_display.text()
+        value, ok = QInputDialog.getText(
+            self,
+            "Edit Decision Cycle",
+            "Enter cycle time in seconds:",
+            text=current
+        )
+        if ok and value:
+            try:
+                float(value)
+                self._decision_cycle_display.setText(value)
+                self._save_to_config()
+            except ValueError:
+                QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
     
     def get_enable_restart(self) -> bool:
         """Get the enable restart checkbox state"""
@@ -186,6 +229,13 @@ class SystemSettings(QWidget):
     def set_restart_time(self, time: str):
         """Set the restart/snooze time value"""
         self._restart_time_display.setText(time)
+    
+    def get_decision_cycle_seconds(self) -> str:
+        return getattr(self, '_decision_cycle_display', None).text() if hasattr(self, '_decision_cycle_display') else ""
+
+    def set_decision_cycle_seconds(self, seconds: str):
+        if hasattr(self, '_decision_cycle_display'):
+            self._decision_cycle_display.setText(seconds)
     
     # Legacy methods for backward compatibility
     def get_minutes_to_restart(self) -> str:

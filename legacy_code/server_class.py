@@ -8,7 +8,10 @@ import pandas as pd
 import shutil
 import pickle
 from datetime import datetime
-from os_class import os_manager
+try:
+    from .os_class import os_manager  # package relative (frozen & normal)
+except ImportError:
+    from os_class import os_manager   # fallback when run standalone
 
 class ServerManager:
     
@@ -606,22 +609,28 @@ class ServerManager:
                 zip_path = os.path.join(current_dir, 'encrypted_model.zip')
                 
                 # Decode base64 string back to bytes
-                import base64
-                zip_content_bytes = base64.b64decode(data['encrypted_model'])
-                
-                # save the zipped files to current dir
-                with open(zip_path, 'wb') as f:
-                    f.write(zip_content_bytes)
-                print(f"DEBUG: Encrypted model saved successfully to: {zip_path}")
-                
-                # extract the zipped files to current dir
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(current_dir)
-                print(f"DEBUG: Extracted encrypted model to: {current_dir}")
-                
-                # delete the zipped file
-                os.remove(zip_path)
-                return 
+                import os
+                import sys
+                import ctypes
+                from ctypes import c_char_p, c_size_t, c_void_p, POINTER, c_ubyte, c_bool
+                import platform
+                import re
+                from datetime import datetime
+                import uuid
+                import hashlib
+                import shutil
+                import subprocess
+                import psutil
+                import zipfile
+                import tempfile
+                # import time
+                import sys
+
+                # Ensure relative import works inside packaged application
+                try:
+                    from .os_class import os_manager  # type: ignore
+                except Exception:  # fallback when run as script directly
+                    from os_class import os_manager  # type: ignore
             else:
                 print(f"DEBUG: Failed to download encrypted model. Status code: {response.status_code}")
                 print(f"DEBUG: Response: {response.text}")

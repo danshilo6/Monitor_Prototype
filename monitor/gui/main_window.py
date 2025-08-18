@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
         fallback_style = """
         QMainWindow { 
             background-color: #ffffff; 
-            font-family: "Segoe UI", Arial, sans-serif;
+            font-family: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
         }
         #content-area { 
             background-color: #f8f9fa; 

@@ -31,6 +31,10 @@ AlertsList QTableWidget::item, QTableView#alertsTable::item {
     padding: 12px 8px;
     border: none;
     border-bottom: 1px solid #f0f0f0;
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 14px;
+    color: #2d3142;
+    min-height: 24px;
 }
 
 /* Icon sizing for the type column */
@@ -63,6 +67,8 @@ AlertsList QHeaderView::section, QTableView#alertsTable QHeaderView::section {
     font-weight: bold;
     color: #2d3142;
     font-size: 14px;
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    min-height: 28px;
 }
 
 

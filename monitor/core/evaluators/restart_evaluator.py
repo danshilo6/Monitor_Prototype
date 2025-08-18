@@ -6,8 +6,10 @@ based on thread device failures and timing constraints.
 """
 
 from datetime import datetime, timedelta
+
 from typing import Dict, Any, Optional
 import logging
+from monitor.services.devices_models import DeviceType
 
 class RestartEvaluator:
     """
@@ -29,7 +31,7 @@ class RestartEvaluator:
         self.logger = logger
         self.minutes_to_restart = minutes_to_restart
         self.restart_cooldown_minutes = restart_cooldown_minutes
-        self.thread_device_types = ['thread', 'device_mode_thread', 'system_health']
+
     
     def should_restart(self, device_statuses: Dict[str, Dict[str, Any]], 
                       restart_info: Dict[str, Any], 
@@ -45,9 +47,12 @@ class RestartEvaluator:
         Returns:
             True if restart should occur, False otherwise
         """
+
+
         # Check if any thread devices are in fail status
         failed_thread_device = self._find_failed_thread_device(device_statuses)
-        if not failed_thread_device:
+        thread_devices = self._find_thread_devices(device_statuses)
+        if not failed_thread_device and len(thread_devices) >= 3:
             self.logger.debug("No failed thread devices found")
             return False
         
@@ -74,11 +79,21 @@ class RestartEvaluator:
             Device ID of first failed thread device, or None if none found
         """
         for device_id, device_info in device_statuses.items():
-            if (device_info.get('status') == 'fail' and 
-                device_info.get('type', '').lower() in self.thread_device_types):
+            if (
+                device_info.get('status') == 'fail' and
+                device_info.get('type', '').lower() == DeviceType.THREAD.value.lower()
+            ):
                 return device_id
         return None
     
+    def _find_thread_devices(self, devices_statuses: Dict[str, Dict[str, Any]]) -> list[str]:
+        thread_type = DeviceType.THREAD.value.lower()
+        return [
+            device_id for device_id, device_info in devices_statuses.items() if device_info.get('type', '').lower() == thread_type
+        ]
+
+
+
     def _check_engine_runtime(self, engine_start_time: Optional[datetime]) -> bool:
         """
         Check if the engine has been running long enough to allow restart.

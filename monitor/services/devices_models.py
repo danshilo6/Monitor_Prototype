@@ -12,17 +12,15 @@ import json
 
 
 class DeviceType(Enum):
-    """Enumeration of supported device types."""
-    CAMERA = "camera"
-    SPRINKLER = "sprinkler"
-    FAN = "fan"
+    """Enumeration of supported device types from log entries."""
     GROUP = "group"
-    THREAD = "thread"
-    DEVICE_MODE_THREAD = "device_mode_thread"
-    SYSTEM_HEALTH = "system_health"
+    FAN = "fan" 
+    SPRINKLER = "sprinkler"
+    CAMERA = "camera"
     COMPORT = "comport"
-    THI = "THI"
-    UNKNOWN = "unknown"
+    THREAD = "thread"
+    THI = "thi"
+    UNKNOWN = "unknown"  # Fallback for unrecognized types
     
     def __str__(self) -> str:
         """Return the string value of the enum."""

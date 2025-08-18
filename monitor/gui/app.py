@@ -1,7 +1,8 @@
 import sys
 import argparse
+import platform
 from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
-from PySide6.QtCore import QDir, QFile, QTimer
+from PySide6.QtCore import QDir, QFile, QTimer, Qt
 from PySide6.QtGui import QIcon
 from monitor.gui.main_window import MainWindow
 from monitor.services.config_service import ConfigService
@@ -9,8 +10,10 @@ from monitor.core.thread_manager import ThreadManager, setup_signal_handlers
 from monitor.core.os_manager import OSManager
 from monitor.core.server_manager import ServerManager
 from monitor.log_setup import init_logging, get_logger
+from monitor.services.alert_db import AlertDatabase
+from monitor.services.contact_db import ContactDatabase        
 from pathlib import Path
-
+import time
 
 def auto_start_eintzofia_with_feedback(config_service, parent_window=None):
     """
@@ -21,7 +24,6 @@ def auto_start_eintzofia_with_feedback(config_service, parent_window=None):
         config_service: Configuration service to get EinTzofia path
         parent_window: Parent window for error dialogs (optional)
     """
-    from PySide6.QtCore import QTimer
     logger = get_logger("monitor.gui.app")
     
     def delayed_start():
@@ -97,6 +99,21 @@ def setup_application() -> QApplication:
     
     try:
         app = QApplication(sys.argv)
+        
+        # Set application-wide font for Linux compatibility
+        if platform.system() == "Linux":
+            from PySide6.QtGui import QFont
+            font = QFont("DejaVu Sans", 10)
+            if not font.exactMatch():
+                font = QFont("Liberation Sans", 10)
+            if not font.exactMatch():
+                font = QFont("Noto Sans", 10)
+            if not font.exactMatch():
+                font = QFont() # Fallback to system default
+                font.setPointSize(10)
+            app.setFont(font)
+            logger.info(f"Set Linux font: {font.family()}")
+        
         set_app_icon(app)
         logger.info("Qt application initialized successfully")
         return app
@@ -125,8 +142,6 @@ def create_databases():
     logger.debug("Initializing database services")
     
     try:
-        from monitor.services.alert_db import AlertDatabase
-        from monitor.services.contact_db import ContactDatabase
         
         alert_db = AlertDatabase()
         contact_db = ContactDatabase()
@@ -181,6 +196,9 @@ def create_thread_manager(config_service: ConfigService, alert_db, contact_db, s
     logger.debug("Creating thread manager")
     
     try:
+        # Set EinTzofia path if first run (before any other detection logic)
+        config_service.set_eintzofia_path_if_first_run(find_eintzofia_path)
+        
         # Get Ein Tzofia program path from config
         eintzofia_path = config_service.get("general", "eintzofia_path", "")
         print(f"DEBUG: Retrieved eintzofia_path = '{eintzofia_path}'")
@@ -347,6 +365,48 @@ def _show_auth_error(parent_window, message: str):
     msg_box.exec()
 
 
+def start_background_operations(app, window, config_service, server_manager, thread_manager, args):
+    """
+    Handle authentication and EinTzofia startup in background thread.
+    
+    Args:
+        app: QApplication instance
+        window: Main window instance  
+        config_service: Configuration service
+        server_manager: Server manager for authentication
+        thread_manager: Thread manager instance
+        args: Command line arguments
+    """
+    logger = get_logger("monitor.gui.app")
+    
+    logger.info("Starting server authentication")
+    if not authenticate_with_server(window, config_service, server_manager):
+        logger.info("Authentication failed or cancelled - exiting application")
+        app.quit()
+        return
+    
+    # Authentication successful - continue with startup
+    logger.info("Authentication successful - continuing with application startup")
+    
+    # Auto-start EinTzofia with user feedback
+    #auto_start_eintzofia_with_feedback(config_service, window)
+    
+    # Start worker threads
+    if not thread_manager.start_threads():
+        logger.error("Failed to start worker threads")
+        app.quit()
+        return
+    
+    # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
+    # Start test alert generation if requested
+    if args.test_alerts and hasattr(window, '_alert_db'):
+        window._alert_db.start_threaded_test_alerts(args.test_interval)
+        logger.info(f"Started test alert generation (interval: {args.test_interval}s)")
+    # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
+    
+    logger.info("Application startup completed")
+
+
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Monitor Prototype Application")
@@ -408,34 +468,15 @@ def main() -> int:
             lambda msg: logger.error(f"Thread error: {msg}")
         )
         
-        # Show window first
+        # Show window first - UI is now responsive
         window.show()
         
-        # Perform authentication after UI is shown
-        logger.info("Starting server authentication")
-        if not authenticate_with_server(window, config_service, server_manager):
-            logger.info("Authentication failed or cancelled - exiting application")
-            return 1
+        # Start background operations after short delay
+        QTimer.singleShot(100, lambda: start_background_operations(
+            app, window, config_service, server_manager, thread_manager, args
+        ))
         
-        # Authentication successful - continue with startup
-        logger.info("Authentication successful - continuing with application startup")
-        
-        # Auto-start EinTzofia with user feedback
-        auto_start_eintzofia_with_feedback(config_service, window)
-        
-        # Start worker threads
-        if not thread_manager.start_threads():
-            logger.error("Failed to start worker threads")
-            return 1
-        
-        # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
-        # Start test alert generation if requested
-        if args.test_alerts and hasattr(window, '_alert_db'):
-            window._alert_db.start_threaded_test_alerts(args.test_interval)
-            logger.info(f"Started test alert generation (interval: {args.test_interval}s)")
-        # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
-        
-        logger.info("Application startup completed, entering main loop")
+        logger.info("UI ready, background startup initiated")
         
         # Start the application event loop
         exit_code = app.exec()
@@ -456,7 +497,7 @@ def main() -> int:
             thread_manager.stop_threads()
             
             # Wait for threads to stop (up to 5 seconds)
-            import time
+           
             start_time = time.time()
             while thread_manager.is_running and (time.time() - start_time) < 5:
                 QApplication.processEvents()

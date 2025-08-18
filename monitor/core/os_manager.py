@@ -4,9 +4,8 @@ import platform
 from pathlib import Path
 from monitor.log_setup import get_logger
 
-# Import the legacy os_manager class
-sys.path.append(str(Path(__file__).parent.parent.parent / "legacy_code"))
-from os_class import os_manager as LegacyOSManager
+# Import the legacy os_manager class via package so PyInstaller can discover it
+from legacy_code import os_manager as LegacyOSManager
 
 
 class MockParent:

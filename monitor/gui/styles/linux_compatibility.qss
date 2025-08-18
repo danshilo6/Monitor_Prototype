@@ -1,0 +1,122 @@
+/* Linux Compatibility Styles */
+/* These styles address common rendering issues on Linux systems */
+
+/* Global font fallback chain */
+* {
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", "Ubuntu", Arial, sans-serif;
+}
+
+/* Ensure minimum heights for text elements */
+QLabel {
+    min-height: 20px;
+    padding: 2px 4px;
+    color: #2d3142;
+}
+
+/* Form labels need extra attention on Linux */
+QFormLayout QLabel {
+    font-weight: 500;
+    color: #2d3142;
+    font-size: 14px;
+    min-height: 24px;
+    padding: 4px 8px;
+}
+
+
+/* Dialog elements */
+QDialog QLabel {
+    color: #2d3142;
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 20px;
+    padding: 2px 4px;
+}
+
+
+/* Password field fixes */
+QLineEdit[echoMode="2"] {
+    lineedit-password-character: 8226; /* bullet character */
+    font-family: "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", monospace;
+}
+
+
+/* Table text rendering */
+QTableView {
+    font-size: 14px;
+}
+
+QTableView::item {
+    padding: 8px;
+    min-height: 24px;
+    color: #2d3142;
+}
+
+QHeaderView::section {
+    min-height: 28px;
+    padding: 4px 8px;
+    font-weight: bold;
+    color: #2d3142;
+}
+
+/* Combo box text */
+QComboBox {
+    min-height: 24px;
+    padding: 4px 8px;
+    font-size: 14px;
+}
+
+/* Spin box text */
+QSpinBox, QDoubleSpinBox {
+    min-height: 24px;
+    padding: 4px 8px;
+    font-size: 14px;
+}
+
+/* Group box text */
+QGroupBox {
+    font-size: 14px;
+    font-weight: bold;
+    color: #2d3142;
+}
+
+QGroupBox::title {
+    color: #2d3142;
+    font-weight: bold;
+    padding: 2px 4px;
+}
+
+/* Tab widget text */
+QTabWidget::tab-bar {
+    font-size: 14px;
+}
+
+QTabBar::tab {
+    min-height: 28px;
+    padding: 6px 12px;
+    font-size: 14px;
+    color: #2d3142;
+}
+
+/* Menu text */
+QMenu {
+    font-size: 14px;
+}
+
+QMenu::item {
+    padding: 4px 8px;
+    min-height: 20px;
+    color: #2d3142;
+}
+
+/* Status bar text */
+QStatusBar {
+    font-size: 14px;
+    color: #2d3142;
+}
+
+/* Tooltip text */
+QToolTip {
+    font-size: 12px;
+    color: #2d3142;
+    padding: 4px 8px;
+}

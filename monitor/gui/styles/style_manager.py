@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Dict
+import platform
 
 class StyleManager:
     """Manages application styles and provides utilities for loading QSS files"""
@@ -32,10 +33,46 @@ class StyleManager:
         combined_styles = []
         
         for style_name in style_names:
-            style_content = self.load_style(style_name)
-            combined_styles.append(f"/* {style_name.upper()} STYLES */")
-            combined_styles.append(style_content)
-            combined_styles.append("")  # Empty line for separation
+            try:
+                style_content = self.load_style(style_name)
+                combined_styles.append(f"/* {style_name.upper()} STYLES */")
+                combined_styles.append(style_content)
+                combined_styles.append("")  # Empty line for separation
+            except FileNotFoundError:
+                print(f"Warning: Style file '{style_name}' not found")
+        
+        # Add Linux-specific compatibility styles
+        if platform.system() == "Linux":
+            try:
+                print("X")
+                linux_style = self.load_style("linux_compatibility")
+                combined_styles.append("/* LINUX COMPATIBILITY STYLES */")
+                combined_styles.append(linux_style)
+                combined_styles.append("")
+            except FileNotFoundError:
+                # Fallback inline styles if linux_compatibility.qss doesn't exist
+                linux_fixes = """
+                /* LINUX COMPATIBILITY FIXES */
+                * {
+                    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+                }
+                
+                QLineEdit[echoMode="2"] {
+                    lineedit-password-character: 8226; /* bullet character */
+                    font-family: monospace;
+                }
+                
+                QLabel {
+                    min-height: 20px;
+                    padding: 2px 4px;
+                }
+                
+                QPushButton {
+                    min-height: 32px;
+                    padding: 6px 12px;
+                }
+                """
+                combined_styles.append(linux_fixes)
         
         return "\n".join(combined_styles)
     

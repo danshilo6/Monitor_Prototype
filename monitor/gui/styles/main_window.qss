@@ -1,6 +1,8 @@
 /* Main Window Styles - Qt Compatible */
 QMainWindow {
     background-color: #ffffff;
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 14px;
 }
 
 /* Content Area Styles */
@@ -10,17 +12,29 @@ QMainWindow {
     background-color: #f8f9fa;
     padding: 40px;
     border: none;
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
 }
 
-/* General styling for better appearance */
-QWidget {
-    font-family: "Segoe UI", Arial, sans-serif;
-}
-
-/* Ensure clean appearance */
+/* Ensure clean appearance and proper text rendering */
 QLabel {
     border: none;
     background: transparent;
+    color: #333333;
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 14px;
+    /* Ensure text is visible on Linux */
+    min-height: 20px;
+    padding: 2px 4px;
+}
+
+/* Fix for form labels that might be invisible */
+QFormLayout QLabel {
+    font-weight: 500;
+    color: #2d3142;
+    font-size: 14px;
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    min-height: 24px;
+    padding: 4px 8px;
 }
 
 /* Custom focus styles - maintains accessibility with better appearance */
@@ -30,4 +44,44 @@ QPushButton:focus {
 
 QLabel:focus {
     outline: none;
+}
+
+/* Ensure buttons have proper text visibility */
+QPushButton {
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+}
+
+/* Fix for dialog text visibility */
+QDialog {
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 14px;
+}
+
+QDialog QLabel {
+    color: #2d3142;
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 20px;
+    padding: 2px 4px;
+}
+
+QDialog QPushButton {
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 14px;
+    min-height: 32px;
+    padding: 8px 16px;
+}
+
+/* Fix for password input field */
+QLineEdit {
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", monospace;
+    font-size: 14px;
+    min-height: 24px;
+    padding: 6px 8px;
+}
+
+QLineEdit[echoMode="2"] {
+    /* Password mode - ensure proper character rendering */
+    font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", monospace;
+    lineedit-password-character: 42; /* ASCII for * */
 }
