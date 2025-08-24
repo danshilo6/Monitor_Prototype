@@ -2,11 +2,12 @@
 NavigationBar {
     background-color: #2d3142;
     border-right: 1px solid #4f5b66;
+    min-width: 150px;
 }
 
 /* Navigation Button Styles */
 NavigationBar QPushButton {
-    background-color: #4f5d75;
+    background-color: rgba(72, 88, 124, 1);
     color: white;
     border: none;
     padding: 12px 12px;
@@ -15,20 +16,21 @@ NavigationBar QPushButton {
     font-size: 13px;
     font-weight: bold;
     text-align: left;
-    min-width: 120px;
+    min-width: 60px;
+    min-height: 15px;
     icon-size: 20px 20px;
 }
 
 NavigationBar QPushButton:hover {
-    background-color: #5a6b87;
+    background-color: rgba(100, 121, 170, 1);
 }
 
 NavigationBar QPushButton:checked {
-    background-color: #ef476f;
+    background-color: rgba(195, 66, 90, 1);
 }
 
 NavigationBar QPushButton:checked:hover {
-    background-color: #f25c7c;
+    background-color: rgba(195, 66, 90, 1);
 }
 
 /* Icon styling for different states */

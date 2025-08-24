@@ -43,7 +43,8 @@ class NavigationBar(QWidget):
             ("Contacts", "contacts", "contacts.svg"),
             ("Settings", "settings", "settings.svg"),
         ]:
-            btn = self._button_manager.add_button(label, page, get_icon_path(icon))
+            btn = self._button_manager.add_button(label, page, get_icon_path(icon))  # Empty text
+            btn.setToolTip(label)  # Set tooltip with the label
             layout.addWidget(btn)
 
         # default selection

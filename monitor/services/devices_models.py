@@ -19,7 +19,7 @@ class DeviceType(Enum):
     CAMERA = "camera"
     COMPORT = "comport"
     THREAD = "thread"
-    THI = "thi"
+    THI = "THI_sensor"
     UNKNOWN = "unknown"  # Fallback for unrecognized types
     
     def __str__(self) -> str:

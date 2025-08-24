@@ -149,17 +149,3 @@ class RestartEvaluator:
         except ValueError as e:
             self.logger.warning(f"Could not parse last restart time '{last_restart_str}': {e}")
             return True  # If we can't parse the time, allow restart
-    
-    def create_restart_record(self) -> Dict[str, Any]:
-        """
-        Create a restart record with current timestamp and incremented count.
-        
-        Returns:
-            Dictionary containing restart record information
-        """
-        current_time = datetime.now()
-        return {
-            'last_restart_time': current_time.isoformat(),
-            'restart_count': 1,  # Will be updated by caller if needed
-            'timestamp': current_time
-        }

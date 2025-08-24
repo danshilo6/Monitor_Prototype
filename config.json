@@ -1,6 +1,6 @@
 {
   "general": {
-    "location_name": "Dan's PC",
+    "location_name": "email testing",
     "eintzofia_path": "C:/Users/dansh/github/EinTzofia/EinTzofia_12_07_25.exe"
   },
   "versions": {
@@ -8,20 +8,23 @@
     "ein_tzofia_version": "12-07-25"
   },
   "system": {
-    "enable_restart": true,
+    "enable_restart": false,
     "minutes_to_restart": "5",
     "restart_cooldown_minutes": "2",
     "startup_snooze_time": "5",
-    "check_eintzofia_running": true,
-    "decision_cycle_seconds": "3"
+    "check_eintzofia_running": false,
+    "enable_eintzofia_auto_reopen": false,
+    "decision_cycle_seconds": "3",
+    "enable_device_failure_emails": true,
+    "enable_restart_emails": true
   },
   "devices": {
-    "relay_fail_threshold": "5",
+    "relay_fail_threshold": "30",
     "camera_fail_threshold": "0.5",
     "camera_log_minutes": "20",
     "history_length": "50"
   },
   "device": {
-    "signed_id": ""
+    "signed_id": "60719bf12f482f5ff801ac5f4ddf3e0f3261e947835fd2b32865f3fd945aaf7581555e27e2536a4eb6f43dbfe8b797062f61c9ca6abfe165ce95e69c83f1ba472753cc125f47e3a3bff47fd61f83e1606a1de0dee51f2e814c7b71efc8efb36dcc74474fa37168d76884deb8e39216fbf1e6623391d588c81177fd85293036c0302e537c5d229d62aea172f1bc575f1de4be6fcf4f5705481c7f6b369900c5b58de2591c8c2fede37b7ee64978766374753aaa2d3a401c7e1cefe43cf7fb331e8b3398e402d61aa66fdadf029e2dbd099a8a73d36cdf12cacac641093627d013e87dbdf235789ffdd717ccb4c3818a1c63ab49496d01fb1767ef1c0a48cf9612"
   }
 }

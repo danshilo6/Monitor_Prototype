@@ -218,7 +218,8 @@ QCheckBox#settings-checkbox::indicator {
 }
 
 QCheckBox#settings-checkbox::indicator:checked {
-    image: url(monitor/gui/icons/checkmark.svg);
+    background-color: #1976d2;
+    border: 2px solid #1976d2;
 }
 
 QCheckBox#settings-checkbox::indicator:hover {

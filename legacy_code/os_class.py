@@ -23,7 +23,7 @@ class os_manager:
     def __init__(self, parent = None):
         self.parent = parent
         self.current_os = platform.system()
-        print("current_os: ",self.current_os)
+        #print("current_os: ",self.current_os)
         self.executable_extension = ".exe" if self.current_os == "Windows" else ""
     
     def get_executable_name(self, file_path):

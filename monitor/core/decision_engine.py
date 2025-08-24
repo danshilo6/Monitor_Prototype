@@ -27,13 +27,14 @@ from PySide6.QtCore import QObject, Slot, Signal, QTimer
 from monitor.log_setup import get_logger
 from monitor.core.log_processor import LogProcessor
 from monitor.services.devices_db import DevicesDatabase
+from monitor.services.contact_db import ContactDatabase
+from monitor.services.email_service import EmailService
 from monitor.services.config_service import ConfigService
 from monitor.services.devices_models import DeviceInfo, DeviceType
 from monitor.services.alert_models import Alert, AlertType
 from monitor.core.evaluators.consecutive_count_evaluator import ConsecutiveCountEvaluator
 from monitor.core.evaluators.timeout_evaluator import TimeoutEvaluator
 from monitor.core.evaluators.failure_rate_evaluator import FailureRateEvaluator
-from monitor.core.evaluators.restart_evaluator import RestartEvaluator
 from monitor.core.device_status_manager import DeviceStatusManager
 from monitor.core.restart_manager import RestartManager
 from monitor.core.os_manager import OSManager
@@ -44,6 +45,7 @@ DEFAULT_CAMERA_FAIL = 0.6
 DEFAULT_RESTART = 5
 DEFAULT_RESTART_COOLDOWN = 30  # Minimum minutes between computer restarts
 DEFAULT_CHECK_EINTZOFIA_RUNNING = True  # Whether to check if Ein Tzofia is running before restart
+DEFAULT_ENABLE_EINTZOFIA_AUTO_REOPEN = True  # Whether to enable automatic Ein Tzofia auto-reopen
 
 class DecisionEngine(QObject):
     """
@@ -98,13 +100,6 @@ class DecisionEngine(QObject):
         # Timer for monitoring cycles (will be created when started)
         self._cycle_timer = None
         
-        # Device failure thresholds and system settings (loaded from config)
-        self.relay_fail_threshold = DEFAULT_RELAY_FAIL  # For fan and relay-controlled devices
-        self.camera_fail_threshold = DEFAULT_CAMERA_FAIL
-        self.minutes_to_restart = DEFAULT_RESTART
-        self.restart_cooldown_minutes = DEFAULT_RESTART_COOLDOWN
-        self.check_eintzofia_running_enabled = DEFAULT_CHECK_EINTZOFIA_RUNNING  # Whether to check if Ein Tzofia is running before restart
-        
         # Initialize device status manager
         self.device_status_manager = DeviceStatusManager()
         
@@ -114,8 +109,12 @@ class DecisionEngine(QObject):
         # Initialize server manager
         self.server_manager = ServerManager(self.config_service, self.os_manager)
         
-        # Database connection
+        # Database connections
         self.devices_db = DevicesDatabase(data_directory / "devices.db")
+        self.contact_db = ContactDatabase(data_directory / "contacts.db")
+        
+        # Initialize email service
+        self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
         
         # Initialize log processor with shared database (no timer - controlled by this engine)
         self.log_processor = LogProcessor(logs_directory, data_directory, self.devices_db)
@@ -126,32 +125,21 @@ class DecisionEngine(QObject):
         self.failure_rate_evaluator = None
         self.restart_evaluator = None
         self.restart_manager = None  # Will be initialized in start() with config
-        
-        # Note: Alert database connection will be handled via signals
-        
+
+        # Note: Alert database connection will be handled via signals    
         self.logger.info("DecisionEngine initialized")
     
     def _load_config_thresholds(self) -> None:
         """
-        Load device failure thresholds and system settings from config file.
+        Load decision engine cycle interval from config file.
         
-        This method reads the config.json file and extracts the device
-        thresholds and restart settings used for automated decisions.
+        Other settings are now read directly from config service for real-time updates.
         """
         try:
             # Use the injected config service
             config = self.config_service
             
-            # Load device thresholds
-            self.relay_fail_threshold = int(config.get("devices", "relay_fail_threshold", DEFAULT_RELAY_FAIL))
-            self.camera_fail_threshold = float(config.get("devices", "camera_fail_threshold", DEFAULT_CAMERA_FAIL))
-            
-            # Load system restart setting
-            self.minutes_to_restart = int(config.get("system", "minutes_to_restart", DEFAULT_RESTART))
-            self.restart_cooldown_minutes = int(config.get("system", "restart_cooldown_minutes", DEFAULT_RESTART_COOLDOWN))
-            self.check_eintzofia_running_enabled = config.get("system", "check_eintzofia_running", DEFAULT_CHECK_EINTZOFIA_RUNNING)
-
-            # Load decision engine cycle interval (seconds) if provided
+            # Load decision engine cycle interval (seconds) if provided - keep cached for performance
             raw_cycle = config.get("system", "decision_cycle_seconds", self.cycle_interval)
             try:
                 # Accept string or numeric; ignore empty string
@@ -169,6 +157,20 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.warning(f"Failed to load config, using defaults: {e}")
             # Keep the default values set in __init__
+
+    def _get_evaluator_with_current_config(self, evaluator_type: str):
+        """Get evaluator instance with current config values."""
+        if evaluator_type == "consecutive_count":
+            threshold = int(self.config_service.get("devices", "relay_fail_threshold", DEFAULT_RELAY_FAIL))
+            return ConsecutiveCountEvaluator(self.logger, threshold)
+        elif evaluator_type == "timeout":
+            timeout = int(self.config_service.get("system", "minutes_to_restart", DEFAULT_RESTART))
+            return TimeoutEvaluator(self.logger, timeout)
+        elif evaluator_type == "failure_rate":
+            threshold = float(self.config_service.get("devices", "camera_fail_threshold", DEFAULT_CAMERA_FAIL))
+            return FailureRateEvaluator(self.logger, threshold)
+        else:
+            raise ValueError(f"Unknown evaluator type: {evaluator_type}")
     
     @Slot()
     def start(self) -> None:
@@ -183,23 +185,15 @@ class DecisionEngine(QObject):
         # Load config thresholds once at startup
         self._load_config_thresholds()
         
-        # Initialize evaluators with loaded config
-        self.consecutive_count_evaluator = ConsecutiveCountEvaluator(
-            self.logger, self.relay_fail_threshold
-        )
-        self.timeout_evaluator = TimeoutEvaluator(
-            self.logger, self.minutes_to_restart
-        )
-        self.failure_rate_evaluator = FailureRateEvaluator(
-            self.logger, self.camera_fail_threshold
-        )
-        self.restart_evaluator = RestartEvaluator(
-            self.logger, self.minutes_to_restart, self.restart_cooldown_minutes
-        )
+        # Initialize evaluators (will be updated with current config values when used)
+        self.consecutive_count_evaluator = None
+        self.timeout_evaluator = None
+        self.failure_rate_evaluator = None
         self.restart_manager = RestartManager(
-            self.minutes_to_restart, 
-            self.restart_cooldown_minutes, 
-            self.check_eintzofia_running_enabled
+            self.device_status_manager,
+            self.config_service,
+            self.os_manager,
+            self.email_service
         )
         
         # Start the log processor (no timer needed)
@@ -233,8 +227,6 @@ class DecisionEngine(QObject):
         
         # Close log processor
         self.log_processor.stop()
-        
-        self.devices_db.close()
         self.logger.info("DecisionEngine stopped")
         self.finished.emit()  # Emit finished signal for thread cleanup
     
@@ -268,8 +260,8 @@ class DecisionEngine(QObject):
         
         This method processes logs first, then evaluates devices sequentially.
         """
-        print("DECISION ENGINE CYCLE")
-
+        print("\n\n============================================ DECISION ENGINE CYCLE ============================================")
+        
         if not self._running:
             self.logger.warning("DecisionEngine is not running, cannot run cycle")
             return
@@ -286,7 +278,7 @@ class DecisionEngine(QObject):
         
         # Step 2: Check Ein Tzofia status if enabled
         try:
-            #self._check_and_start_eintzofia()
+            self._check_and_start_eintzofia()
             self.logger.debug("Ein Tzofia check completed")
         except Exception as e:
             self.logger.error(f"Ein Tzofia check error: {e}")
@@ -298,26 +290,37 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.error(f"Device evaluation error: {e}")
         
-        # Step 3: Evaluate restart conditions
-        try:
-            self._evaluate_restart_conditions()
-            self.logger.debug("Restart evaluation completed")
-        except Exception as e:
-            self.logger.error(f"Restart evaluation error: {e}")
-        
-        # Step 4: Send pulse to server
+        self.devices_db.print_devices_summary("Device DB")
+
+        # Step 3: Send pulse to server
         try:
             self._pulse_to_server()
             self.logger.debug("Server pulse completed")
         except Exception as e:
             self.logger.error(f"Server pulse error: {e}")
-        
+
+        # Step 4: Evaluate restart conditions
+        try:
+            self._evaluate_restart_conditions()
+            self.logger.debug("Restart evaluation completed")
+        except Exception as e:
+            self.logger.error(f"Restart evaluation error: {e}")
+
         # Emit completion signal
         self.cycle_completed.emit(processed_count)
+        
+        # Log timestamp at the end of the cycle
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.logger.debug(f"Cycle completed at: {current_time}")
+        print(f"Cycle completed at: {current_time}\n")
     
     def _check_and_start_eintzofia(self) -> None:
         """Check if Ein Tzofia is running and start it if needed (when enabled)."""
-        if not self.check_eintzofia_running_enabled:
+        # Check config service directly for real-time setting
+        if not self.config_service.get("system", "enable_eintzofia_auto_reopen", DEFAULT_ENABLE_EINTZOFIA_AUTO_REOPEN):
+            return
+            
+        if not self.config_service.get("system", "check_eintzofia_running", DEFAULT_CHECK_EINTZOFIA_RUNNING):
             return
             
         try:
@@ -391,17 +394,20 @@ class DecisionEngine(QObject):
         """
         device_type = device.device_type.lower()
         
-        # Map device types to evaluation logic
+        # Map device types to evaluation logic - use current config values
         if device_type in [DeviceType.FAN.value, DeviceType.SPRINKLER.value, 
                           DeviceType.GROUP.value, DeviceType.COMPORT.value, 
                           DeviceType.THI.value]:
-            return self.consecutive_count_evaluator.evaluate(device)
+            evaluator = self._get_evaluator_with_current_config("consecutive_count")
+            return evaluator.evaluate(device)
             
         elif device_type == DeviceType.THREAD.value:
-            return self.timeout_evaluator.evaluate(device)
+            evaluator = self._get_evaluator_with_current_config("timeout")
+            return evaluator.evaluate(device)
             
         elif device_type == DeviceType.CAMERA.value:
-            return self.failure_rate_evaluator.evaluate(device)
+            evaluator = self._get_evaluator_with_current_config("failure_rate")
+            return evaluator.evaluate(device)
             
         else:
             self.logger.debug(f"No evaluation logic for device type: {device_type}")
@@ -412,8 +418,6 @@ class DecisionEngine(QObject):
         try:
             # Use RestartManager to handle all restart logic
             should_restart, reason = self.restart_manager.should_restart_computer(
-                self.device_status_manager.get_device_statuses(),
-                self.device_status_manager.get_restart_info(),
                 self._start_time
             )
             
@@ -422,11 +426,8 @@ class DecisionEngine(QObject):
                 self.logger.info(f"Restart approved: {reason}")
                 print(f"Restart approved: {reason}")  # TODO: Remove this print later
                 
-                # Execute restart and update restart info
-                updated_restart_info = self.restart_manager.execute_restart(
-                    self.device_status_manager.get_restart_info()
-                )
-                self.device_status_manager.update_restart_info(updated_restart_info)
+                # Execute restart (restart manager will update restart info directly)
+                self.restart_manager.execute_restart()
             else:
                 self.logger.info(f"Restart blocked: {reason}")
                 if "Thread device failure detected" in reason:

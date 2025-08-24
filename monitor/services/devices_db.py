@@ -453,6 +453,56 @@ class DevicesDatabase:
         print(f"Device types: {', '.join(sorted(device_types))}")
         print()
     
+    def print_devices_summary(self, title: str = "Devices Summary") -> None:
+        """
+        Print devices with only essential information: name, type, status, timestamp
+        
+        Args:
+            title: Optional title for the output
+        """
+        devices = self.get_all()
+        
+        if not devices:
+            print(f"\n=== {title} ===")
+            print("No devices found in database")
+            return
+        
+        # Calculate column widths for nice formatting
+        #max_name_width = max(len(device_id) for device_id in devices.keys())
+        max_name_width = 20
+        #max_name_width = max(max_name_width, len("Device Name"))
+        max_type_width = max(len(device.device_type) for device in devices.values())
+        max_type_width = max(max_type_width, len("Type"))
+        
+        # Print header
+        print(f"\n=== {title} ===")
+        print(f"Total devices: {len(devices)}")
+        print()
+        
+        # Print table header
+        header = f"{'Device Name':<{max_name_width}} | {'Type':<{max_type_width}} | {'Status':<7} | {'Consec':<6} | {'Timestamp'}"
+        print(header)
+        print("-" * len(header))
+        
+        # Print device rows sorted by device name
+        for device_id in sorted(devices.keys()):
+            device = devices[device_id]
+            
+            # Format timestamp
+            if device.last_updated:
+                time_str = device.last_updated.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                time_str = "Unknown"
+            
+            row = (f"{device_id:<{max_name_width}} | "
+                   f"{device.device_type:<{max_type_width}} | "
+                   f"{device.status:<7} | "
+                   f"{device.last_log_consecutive_count:<6} | "
+                   f"{time_str}")
+            print(row)
+        
+        print()
+    
     def reset_database(self) -> bool:
         """
         Reset the devices database by clearing all devices with connection-per-operation.

@@ -94,18 +94,21 @@ class ServerManager:
         
         self.logger.info("ServerManager initialized")
     
+    def update_location_name(self, name):
+        self.legacy_server.parent.settings['Location'] = name
+
     # Core server communication methods
     def pulse_to_server(self, password='', return_id=False):
         """Send pulse to server using legacy implementation."""
-        print("ServerManager: Sending pulse to server...")
+        #print("ServerManager: Sending pulse to server...")
         self.logger.info("Sending pulse to server")
         try:
             result = self.legacy_server.pulse_to_server(password, return_id)
-            print(f"ServerManager: Pulse completed with result: {result}")
+            #print(f"ServerManager: Pulse completed with result: {result}")
             self.logger.info(f"Pulse to server completed: {result}")
             return result
         except Exception as e:
-            print(f"ServerManager: Pulse failed with error: {e}")
+            #print(f"ServerManager: Pulse failed with error: {e}")
             self.logger.error(f"Failed to send pulse to server: {e}")
             return "Fail", "Fail", False
     
@@ -127,7 +130,7 @@ class ServerManager:
                 return False
                 
             self.logger.info(f"Sending email to {len(emails)} recipients: {subject}")
-            print(f"📧 SERVER EMAIL SEND: {subject} to {len(emails)} recipients")
+            print(f"SERVER EMAIL SEND: {subject} to {len(emails)} recipients")
             
             result = self.legacy_server.send_email(subject, message, emails)
             

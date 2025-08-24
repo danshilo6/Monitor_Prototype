@@ -14,7 +14,7 @@ class AlertType(Enum):
     GROUP = "group"
     THREAD = "thread"
     COMPORT = "comport"
-    THI = "thi"  # Changed to lowercase to match DeviceType.THI value
+    THI = "THI_sensor"
     UNKNOWN = "unknown"
 
 @dataclass

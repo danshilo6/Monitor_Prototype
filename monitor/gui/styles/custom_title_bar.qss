@@ -1,0 +1,72 @@
+/* Custom Title Bar Styles */
+
+#custom-title-bar {
+    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                              stop: 0 #f8f9fa, stop: 1 #e9ecef);
+    border-bottom: 2px solid #dee2e6;
+}
+
+#title-bar-title {
+    color: #212529;
+    padding-left: 8px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+#title-bar-version {
+    color: #6c757d;
+    padding-left: 4px;
+    font-style: italic;
+    margin-right: 8px;
+}
+
+#title-bar-icon {
+    background-color: transparent;
+    padding: 3px;
+    margin-right: 4px;
+}
+
+#minimize-btn, #maximize-btn {
+    background-color: transparent;
+    color: #495057;
+    border: none;
+    font-weight: bold;
+    border-radius: 4px;
+    margin: 2px;
+}
+
+#minimize-btn:hover, #maximize-btn:hover {
+    background-color: #dee2e6;
+    color: #212529;
+}
+
+#minimize-btn:pressed, #maximize-btn:pressed {
+    background-color: #ced4da;
+    color: #212529;
+}
+
+#close-btn {
+    background-color: transparent;
+    color: #495057;
+    border: none;
+    font-weight: bold;
+    border-radius: 4px;
+    margin: 2px;
+}
+
+#close-btn:hover {
+    background-color: #dc3545;
+    color: #ffffff;
+}
+
+#close-btn:pressed {
+    background-color: #c82333;
+    color: #ffffff;
+}
+
+/* Content Widget Styles */
+#content-widget {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-top: none;
+}

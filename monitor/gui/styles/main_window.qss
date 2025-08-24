@@ -1,6 +1,6 @@
 /* Main Window Styles - Qt Compatible */
 QMainWindow {
-    background-color: #ffffff;
+    background-color: #000000ff;
     font-family: "Segoe UI", "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
     font-size: 14px;
 }

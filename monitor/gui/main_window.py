@@ -3,7 +3,7 @@ from PySide6.QtGui import QIcon, QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
 from monitor.gui.widgets.navigation_bar import NavigationBar
-from monitor.gui.widgets.info_banner import InfoBanner
+from monitor.gui.widgets.custom_title_bar import CustomTitleBarWindow
 from monitor.gui.pages.alerts_page import AlertsPage
 from monitor.gui.pages.contacts_page import ContactsPage
 from monitor.gui.pages.settings_page import SettingsPage
@@ -19,20 +19,19 @@ _WINDOW_HEIGHT = 600
 _WINDOW_X = 100
 _WINDOW_Y = 100
 _CONTENT_MARGIN_PX = 12
-_SIDEBAR_WIDTH = 200
+_SIDEBAR_WIDTH = 150
 
-class MainWindow(QMainWindow):
+class MainWindow(CustomTitleBarWindow):
     """Main application window with navigation sidebar and content area"""
 
     def __init__(self, config_service: ConfigService, alert_db=None, contact_db=None, thread_manager=None) -> None:
-        super().__init__()
+        super().__init__("Monitor")  # Initialize with custom title bar
         self.logger = get_logger("monitor.gui.main_window")
         self.logger.info("Initializing main window")
         
         self._current_page = None
         self._content_area: QWidget
         self._nav_bar: NavigationBar
-        self._info_banner: InfoBanner
         self._config_service = config_service  # Injected dependency
         self._thread_manager = thread_manager  # Optional thread manager for graceful shutdown
         
@@ -54,6 +53,7 @@ class MainWindow(QMainWindow):
             self._setup_ui()
             self._apply_styles()
             self._connect_signals()
+            self._update_title_with_location()
             self.logger.info("Main window initialization completed successfully")
         except Exception as e:
             self.logger.error("Failed to initialize main window", exc_info=True)
@@ -65,7 +65,6 @@ class MainWindow(QMainWindow):
 
     def _setup_window(self) -> None:
         """Configure main window properties"""
-        self.setWindowTitle("Monitor")
         self.setGeometry(_WINDOW_X, _WINDOW_Y, _WINDOW_WIDTH, _WINDOW_HEIGHT)
         self.setMinimumSize(_WINDOW_WIDTH, _WINDOW_HEIGHT)
         self._setup_window_icon()
@@ -79,31 +78,19 @@ class MainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         """Initialize and layout all UI components"""
         
-        # ---- main layout (vertical to stack banner on top) --------------------
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout(main_widget)
-        main_layout.setSpacing(0)
+        # Get the content widget from the custom title bar window
+        content_widget = self.get_content_widget()
+        
+        # ---- main layout (horizontal for navigation and content) ---------------
+        main_layout = QHBoxLayout(content_widget)
+        main_layout.setSpacing(0)  # No gap between sidebar and content
         main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # ---- info banner (top) --------------------------------------------------
-        try:
-            self._info_banner = InfoBanner(self._config_service)
-            main_layout.addWidget(self._info_banner)
-        except Exception as e:
-            self.logger.error("Failed to create info banner", exc_info=True)
-            raise
-
-        # ---- horizontal layout for navigation and content ----------------------
-        content_layout = QHBoxLayout()
-        content_layout.setSpacing(0)  # No gap between sidebar and content
-        content_layout.setContentsMargins(0, 0, 0, 0)
 
         # ---- navigation sidebar ------------------------------------------------
         try:
             self._nav_bar = NavigationBar()
             self._nav_bar.setFixedWidth(_SIDEBAR_WIDTH)
-            content_layout.addWidget(self._nav_bar)
+            main_layout.addWidget(self._nav_bar)
         except Exception as e:
             self.logger.error("Failed to create navigation bar", exc_info=True)
             raise
@@ -112,12 +99,7 @@ class MainWindow(QMainWindow):
         self._content_area = QWidget()
         self._content_area.setObjectName("content-area")  # For CSS targeting
         self._content_layout = QVBoxLayout(self._content_area)
-        content_layout.addWidget(self._content_area, 1)  # Takes remaining space
-
-        # Add horizontal layout to main layout
-        content_widget = QWidget()
-        content_widget.setLayout(content_layout)
-        main_layout.addWidget(content_widget, 1)  # Takes remaining space
+        main_layout.addWidget(self._content_area, 1)  # Takes remaining space
 
         # Set initial content
         self._update_content("alerts")
@@ -130,7 +112,6 @@ class MainWindow(QMainWindow):
             combined_styles = style_manager.get_combined_styles(
                 "main_window",
                 "navigation_bar",
-                "info_banner",
                 "alerts",
                 "contacts",
                 "settings"
@@ -326,7 +307,7 @@ class MainWindow(QMainWindow):
                 # Connect settings page signals for configuration updates (DI)
                 general_settings = page.get_general_settings()
                 if general_settings:
-                    general_settings.location_changed.connect(self.refresh_banner_location)
+                    # Settings signals connected but no banner to refresh
                     self.logger.debug("Settings page signals connected successfully")
         except Exception as e:
             self.logger.error(f"Failed to connect signals for page '{page_name}'", exc_info=True)
@@ -338,23 +319,15 @@ class MainWindow(QMainWindow):
         placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)    
         placeholder.setText(f"Error: Page '{page_name}' not found")
         return placeholder
-
-    def refresh_banner(self):
-        """Refresh the info banner (called when settings change)"""
-        self.logger.debug("Refreshing info banner")
-        try:
-            if hasattr(self, '_info_banner'):
-                self._info_banner.refresh()
-                self.logger.debug("Info banner refreshed successfully")
-        except Exception as e:
-            self.logger.error("Failed to refresh info banner", exc_info=True)
     
-    def refresh_banner_location(self):
-        """Refresh only the location in the banner (for better performance)"""
-        self.logger.debug("Refreshing banner location")
+    def _update_title_with_location(self):
+        """Update the window title to include location and version information"""
         try:
-            if hasattr(self, '_info_banner'):
-                self._info_banner.refresh_location()
-                self.logger.debug("Banner location refreshed successfully")
+            location_name = self._config_service.get("general", "location_name", "Unknown Location")
+            monitor_version = self._config_service.get("versions", "monitor_version", "Unknown")
+            self.set_title_with_location_and_version("Monitor", location_name, monitor_version)
+            self.logger.debug(f"Updated title with location: {location_name} and version: {monitor_version}")
         except Exception as e:
-            self.logger.error("Failed to refresh banner location", exc_info=True)
+            self.logger.error("Failed to update title with location and version", exc_info=True)
+            # Fallback to basic title
+            self.set_title("Monitor")

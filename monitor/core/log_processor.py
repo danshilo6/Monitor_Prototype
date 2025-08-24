@@ -270,9 +270,10 @@ class LogProcessor:
             if new_logs.empty:
                 # No new logs found - debug log this
                 self.logger.debug("No new log entries found in this batch")
-                print("no new logs")
+                print("No new logs")
                 return 0
             
+            print(f"Found {len(new_logs)} new logs")
             self.logger.debug(f"Found {len(new_logs)} new log entries to process")
             
             # Step 2: Load current devices from database into memory

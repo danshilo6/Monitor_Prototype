@@ -1,10 +1,12 @@
 import sys
 import argparse
 import platform
-from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QInputDialog, QLineEdit, QMessageBox, QDialog, QVBoxLayout, QLabel, QDialogButtonBox
 from PySide6.QtCore import QDir, QFile, QTimer, Qt
 from PySide6.QtGui import QIcon
 from monitor.gui.main_window import MainWindow
+from monitor.gui.widgets import AuthDialog
+from monitor.gui.styles.style_manager import StyleManager
 from monitor.services.config_service import ConfigService
 from monitor.core.thread_manager import ThreadManager, setup_signal_handlers
 from monitor.core.os_manager import OSManager
@@ -15,9 +17,10 @@ from monitor.services.contact_db import ContactDatabase
 from pathlib import Path
 import time
 
+
 def auto_start_eintzofia_with_feedback(config_service, parent_window=None):
     """
-    Auto-start EinTzofia with user feedback on failure.
+    Auto-start EinTzofia with user feedback on failure (when auto-reopen is enabled).
     Uses QTimer to avoid blocking the UI thread.
     
     Args:
@@ -29,6 +32,12 @@ def auto_start_eintzofia_with_feedback(config_service, parent_window=None):
     def delayed_start():
         """Execute auto-start after UI is fully loaded"""
         try:
+            # Check if auto-reopen is enabled
+            auto_reopen_enabled = config_service.get("system", "enable_eintzofia_auto_reopen", True)
+            if not auto_reopen_enabled:
+                logger.info("EinTzofia auto-reopen is disabled, skipping auto-start")
+                return
+            
             # Get EinTzofia path from config
             eintzofia_path = config_service.get("general", "eintzofia_path", "")
             logger.info(f"Attempting to auto-start EinTzofia: {eintzofia_path}")
@@ -285,74 +294,91 @@ def create_server_manager(config_service: ConfigService) -> ServerManager:
         raise
 
 
-def authenticate_with_server(main_window, config_service: ConfigService, server_manager: ServerManager) -> bool:
+def authenticate_with_server(config_service: ConfigService, server_manager: ServerManager, parent=None) -> bool:
     """
-    Authenticate with server at startup. Returns True if monitoring should proceed.
+    Show authentication dialog and handle server authentication before main window loads.
+    Returns True if authentication succeeds or local monitoring is allowed, False if cancelled.
     
     Args:
-        main_window: Main window instance for dialogs
         config_service: Configuration service instance
         server_manager: Server manager instance
+        parent: Parent widget for dialogs (optional)
         
     Returns:
         bool: True if authenticated and monitoring should start, False otherwise
     """
     logger = get_logger("monitor.gui.app")
     
-    try:
-        # Check if device ID exists and is approved on server
-        id_exists, id_approved = server_manager.check_id_exists_and_approved()
-        logger.info(f"Server check - ID exists: {id_exists}, ID approved: {id_approved}")
-        
-        # If already approved, proceed with monitoring
-        if id_approved and id_exists:
-            logger.info("Device already approved - authentication successful")
-            return True
-        
-        # Device needs authentication - keep asking for password until correct or cancelled
-        logger.info("Device not approved - requesting password authentication")
-        
-        while True:
-            password, ok = QInputDialog.getText(
-                main_window, 
-                'Authentication Required', 
-                'Enter password to enable monitoring and server communication:',
-                QLineEdit.EchoMode.Password
-            )
+    while True:
+        try:
+            # Check if device ID exists and is approved on server
+            id_exists, id_approved = server_manager.check_id_exists_and_approved()
+            logger.info(f"Server check - ID exists: {id_exists}, ID approved: {id_approved}")
             
-            if not ok:  # User cancelled
+            id = config_service.get("device", "signed_id", "")
+            print(f"\nSIGNED_ID: {id}\n")
+            if not id:
+                id = ""
+            
+            # If already approved, proceed with monitoring
+            if id_approved and id_exists and id != "":
+                logger.info("Device already approved - authentication successful")
+                return True
+
+            # Show authentication dialog with styling
+            current_location = config_service.get("general", "location_name", "")
+            dialog = AuthDialog(current_location, parent)
+            
+            # Apply styling to the dialog
+            style_manager = StyleManager()
+            try:
+                auth_style = style_manager.load_style("auth_dialog")
+                dialog.setStyleSheet(auth_style)
+            except FileNotFoundError:
+                logger.warning("Auth dialog stylesheet not found, using default styling")
+            
+            if dialog.exec() == QDialog.Accepted:
+                password = dialog.get_password()
+                location_name = dialog.get_location_name()
+                
+                # Save location name to config if provided
+                if location_name:
+                    config_service.set("general", "location_name", location_name)
+                    logger.info(f"Location name saved to configuration: {location_name}")
+                    server_manager.update_location_name(location_name)
+
+                if not password:  # Empty password - allow local monitoring
+                    logger.info("Empty password provided - proceeding with local monitoring only")
+                    return True
+                
+                # Attempt authentication with server
+                logger.info("Attempting server authentication")
+                is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
+                    password, 
+                    return_id=True
+                )
+                
+                if is_password_correct:
+                    logger.info("Authentication successful")
+                    
+                    # Save the signed ID to config
+                    if signed_id:
+                        config_service.set("device", "signed_id", signed_id)
+                        logger.info("Signed ID saved to configuration")
+                    
+                    return True
+                else:
+                    logger.warning("Authentication failed - incorrect password")
+                    QMessageBox.warning(parent, "Authentication Error", "Incorrect password. Please try again.")
+                    # Loop continues to ask for password again
+            else:
                 logger.info("User cancelled authentication")
                 return False
                 
-            if not password:  # Empty password - allow local monitoring
-                logger.info("Empty password provided - proceeding with local monitoring only")
-                return True
-            
-            # Attempt authentication with server
-            logger.info("Attempting server authentication")
-            is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
-                password, 
-                return_id=True
-            )
-            
-            if is_password_correct:
-                logger.info("Authentication successful")
-                
-                # Save the signed ID to config
-                if signed_id:
-                    config_service.set("device", "signed_id", signed_id)
-                    logger.info("Signed ID saved to configuration")
-                
-                return True
-            else:
-                logger.warning("Authentication failed - incorrect password")
-                _show_auth_error(main_window, "Incorrect password. Please try again.")
-                # Loop continues to ask for password again
-                
-    except Exception as e:
-        logger.error(f"Error during server authentication: {e}")
-        _show_auth_error(main_window, f"Server communication error: {str(e)}")
-        return False
+        except Exception as e:
+            logger.error(f"Error during server authentication: {e}")
+            QMessageBox.warning(parent, "Authentication Error", f"Server communication error: {str(e)}")
+            return False
 
 
 def _show_auth_error(parent_window, message: str):
@@ -367,7 +393,7 @@ def _show_auth_error(parent_window, message: str):
 
 def start_background_operations(app, window, config_service, server_manager, thread_manager, args):
     """
-    Handle authentication and EinTzofia startup in background thread.
+    Handle EinTzofia startup and thread initialization.
     
     Args:
         app: QApplication instance
@@ -379,17 +405,8 @@ def start_background_operations(app, window, config_service, server_manager, thr
     """
     logger = get_logger("monitor.gui.app")
     
-    logger.info("Starting server authentication")
-    if not authenticate_with_server(window, config_service, server_manager):
-        logger.info("Authentication failed or cancelled - exiting application")
-        app.quit()
-        return
-    
-    # Authentication successful - continue with startup
-    logger.info("Authentication successful - continuing with application startup")
-    
     # Auto-start EinTzofia with user feedback
-    #auto_start_eintzofia_with_feedback(config_service, window)
+    auto_start_eintzofia_with_feedback(config_service, window)
     
     # Start worker threads
     if not thread_manager.start_threads():
@@ -454,6 +471,11 @@ def main() -> int:
         # Create server manager for email/SMS services
         server_manager = create_server_manager(config_service)
         
+        # --- AUTHENTICATION BEFORE MAIN WINDOW ---
+        if not authenticate_with_server(config_service, server_manager):
+            logger.info("Authentication failed or cancelled - exiting application")
+            return 0
+
         # Create and setup thread manager with server manager
         thread_manager = create_thread_manager(config_service, alert_db, contact_db, server_manager)
         

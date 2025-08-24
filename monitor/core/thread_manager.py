@@ -61,8 +61,8 @@ class ThreadManager(QObject):
         self.server_manager = server_manager
         self.cycle_interval = cycle_interval
         
-        # Create email service with server manager
-        self.email_service = EmailService(self.contact_db, self.server_manager)
+        # Create email service with server manager and config service
+        self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
         
         # Thread objects
         self.decision_engine_thread: Optional[QThread] = None

@@ -10,6 +10,7 @@ from typing import List
 from monitor.log_setup import get_logger
 from monitor.services.contact_db import ContactDatabase
 from monitor.services.devices_models import DeviceInfo
+from monitor.services.config_service import ConfigService
 
 
 class EmailService:
@@ -19,22 +20,35 @@ class EmailService:
     Sends emails via the server manager which interfaces with the legacy server.
     """
     
-    def __init__(self, contact_db: ContactDatabase, server_manager=None):
+    def __init__(self, contact_db: ContactDatabase, server_manager=None, config_service: ConfigService = None):
         """
         Initialize the email service.
         
         Args:
             contact_db: ContactDatabase instance for retrieving email addresses
             server_manager: ServerManager instance for sending emails (optional for backwards compatibility)
+            config_service: ConfigService instance for retrieving location name (optional)
         """
         self.logger = get_logger("monitor.services.email_service")
         self.contact_db = contact_db
         self.server_manager = server_manager
+        self.config_service = config_service
         
         if server_manager:
             self.logger.info("EmailService initialized with server manager")
         else:
             self.logger.info("EmailService initialized in mock mode (no server manager)")
+    
+    def _get_location_name(self) -> str:
+        """
+        Get the location name from config service.
+        
+        Returns:
+            Location name string, or default if not configured
+        """
+        if self.config_service:
+            return self.config_service.get("general", "location_name", "Unknown Location")
+        return "Unknown Location"
     
     
     def send_device_failure_notification(self, device: DeviceInfo) -> None:
@@ -44,20 +58,30 @@ class EmailService:
         Args:
             device: DeviceInfo instance that has failed
         """
+        # Check if device failure emails are enabled
+        if self.config_service:
+            emails_enabled = self.config_service.get("system", "enable_device_failure_emails", True)
+            if not emails_enabled:
+                self.logger.debug(f"Device failure emails are disabled, skipping notification for {device.device_id}")
+                return
+        
         try:
             # Get all email addresses from contacts database
             email_addresses = self._get_all_email_addresses()
             
+            print("\n\n** SENDING DEVICE FAIL EMAIL **\n\n")
+
             if not email_addresses:
                 self.logger.warning("No email addresses found in contacts database")
                 return
             
-            # Format the failure message using device's timestamp
+            # Format the failure message using device's timestamp and location
             device_name = device.device_id
             failure_time = device.last_updated.strftime("%Y-%m-%d %H:%M:%S")
+            location_name = self._get_location_name()
             
-            subject = f"Device Failure Alert: {device_name}"
-            message = f"Device {device_name} is not working since {failure_time}"
+            subject = f"{location_name} - Device Failure Alert: {device_name}"
+            message = f"Device {device_name} at {location_name} is not working since {failure_time}"
             
             # Send email via server manager or mock
             if self.server_manager:
@@ -82,6 +106,13 @@ class EmailService:
         Args:
             device: DeviceInfo instance that has recovered
         """
+        # Check if device failure emails are enabled (recovery notifications use the same setting)
+        if self.config_service:
+            emails_enabled = self.config_service.get("system", "enable_device_failure_emails", True)
+            if not emails_enabled:
+                self.logger.debug(f"Device failure emails are disabled, skipping recovery notification for {device.device_id}")
+                return
+        
         try:
             # Get all email addresses from contacts database
             email_addresses = self._get_all_email_addresses()
@@ -90,12 +121,13 @@ class EmailService:
                 self.logger.warning("No email addresses found in contacts database")
                 return
             
-            # Format the recovery message using device's timestamp
+            # Format the recovery message using device's timestamp and location
             device_name = device.device_id
             recovery_time = device.last_updated.strftime("%Y-%m-%d %H:%M:%S")
+            location_name = self._get_location_name()
             
-            subject = f"Device Recovery: {device_name}"
-            message = f"Device {device_name} has recovered and is working normally as of {recovery_time}"
+            subject = f"Device Recovery: {device_name} at {location_name}"
+            message = f"Device {device_name} at {location_name} has recovered and is working normally as of {recovery_time}"
             
             # Send email via server manager or mock
             if self.server_manager:
@@ -112,6 +144,50 @@ class EmailService:
             
         except Exception as e:
             self.logger.error(f"Failed to send device recovery notification for {device.device_id}: {e}")
+    
+    def send_restart_notification(self) -> None:
+        """
+        Send email notification about a system restart initiated by the monitor.
+        """
+        # Check if restart emails are enabled
+        if self.config_service:
+            emails_enabled = self.config_service.get("system", "enable_restart_emails", True)
+            if not emails_enabled:
+                self.logger.debug("Restart emails are disabled, skipping restart notification")
+                return
+        
+        try:
+            # Get all email addresses from contacts database
+            email_addresses = self._get_all_email_addresses()
+            
+            if not email_addresses:
+                self.logger.warning("No email addresses found in contacts database")
+                return
+            
+            print("\n\n** SENDING RESTART NOTIFICATION **\n\n")
+
+            # Format the restart message with location
+            restart_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            location_name = self._get_location_name()
+            
+            subject = f"{location_name} - System Restart Notification"
+            message = f"The monitor at {location_name} has decided to perform a system restart at {restart_time}"
+            
+            # Send email via server manager or mock
+            if self.server_manager:
+                success = self.server_manager.send_email(subject, message, email_addresses)
+                
+                if success:
+                    self.logger.info(f"Restart notification sent to {len(email_addresses)} recipients")
+                else:
+                    self.logger.error("Failed to send restart notification")
+            else:
+                # Fall back to mock for backwards compatibility
+                self._mock_send_email(email_addresses, subject, message)
+                self.logger.info(f"Restart notification (mock) sent to {len(email_addresses)} recipients")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to send restart notification: {e}")
     
     def _get_all_email_addresses(self) -> List[str]:
         """
@@ -154,7 +230,7 @@ class EmailService:
         self.logger.info(f"  Message: {message}")
         
         # Also print to console for visibility during testing
-        print(f"📧 MOCK EMAIL SEND:")
+        print(f"MOCK EMAIL SEND:")
         print(f"   To: {recipients_str}")
         print(f"   Subject: {subject}")
         print(f"   Message: {message}")

@@ -37,10 +37,35 @@ class SystemSettings(QWidget):
         self._check_eintzofia_running_checkbox.toggled.connect(self._save_to_config)
         form_layout.addRow("", self._check_eintzofia_running_checkbox)
 
+        # Enable EinTzofia Auto-reopen checkbox
+        self._enable_eintzofia_auto_reopen_checkbox = QCheckBox("Enable auto-open EinTzofia")
+        self._enable_eintzofia_auto_reopen_checkbox.setObjectName("settings-checkbox")
+        self._enable_eintzofia_auto_reopen_checkbox.toggled.connect(self._save_to_config)
+        form_layout.addRow("", self._enable_eintzofia_auto_reopen_checkbox)
+
+        # Email notifications section header
+        email_notifications_title = QLabel("Email Notifications:")
+        email_notifications_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        form_layout.addRow("", email_notifications_title)
+
+        # Enable Device Failure Emails checkbox
+        self._enable_device_failure_emails_checkbox = QCheckBox("Enable device failure emails")
+        self._enable_device_failure_emails_checkbox.setObjectName("settings-checkbox")
+        self._enable_device_failure_emails_checkbox.toggled.connect(self._save_to_config)
+        form_layout.addRow("", self._enable_device_failure_emails_checkbox)
+
+        # Enable Restart Emails checkbox
+        self._enable_restart_emails_checkbox = QCheckBox("Enable restart notification emails")
+        self._enable_restart_emails_checkbox.setObjectName("settings-checkbox")
+        self._enable_restart_emails_checkbox.toggled.connect(self._save_to_config)
+        form_layout.addRow("", self._enable_restart_emails_checkbox)
+
         # Open/Restart Ein Tzofia button
         self._open_ein_tzofia_btn = QPushButton("Open/Restart Ein Tzofia")
         self._open_ein_tzofia_btn.setObjectName("open-button")
         self._open_ein_tzofia_btn.clicked.connect(self._open_ein_tzofia)
+        self._open_ein_tzofia_btn.setEnabled(True)  # Always enabled for manual use
+        self._open_ein_tzofia_btn.setToolTip("Open EinTzofia manually")
         form_layout.addRow("", self._open_ein_tzofia_btn)
 
         # Restart/Snooze Time title
@@ -92,6 +117,9 @@ class SystemSettings(QWidget):
         # Block signals to prevent saving during load
         self._enable_restart_checkbox.blockSignals(True)
         self._check_eintzofia_running_checkbox.blockSignals(True)
+        self._enable_eintzofia_auto_reopen_checkbox.blockSignals(True)
+        self._enable_device_failure_emails_checkbox.blockSignals(True)
+        self._enable_restart_emails_checkbox.blockSignals(True)
         self._restart_time_display.blockSignals(True)
         if hasattr(self, '_decision_cycle_display'):
             self._decision_cycle_display.blockSignals(True)
@@ -99,6 +127,9 @@ class SystemSettings(QWidget):
         # Load values (use the same value for both restart and snooze)
         self._enable_restart_checkbox.setChecked(self._config.get("system", "enable_restart", False))
         self._check_eintzofia_running_checkbox.setChecked(self._config.get("system", "check_eintzofia_running", True))
+        self._enable_eintzofia_auto_reopen_checkbox.setChecked(self._config.get("system", "enable_eintzofia_auto_reopen", True))
+        self._enable_device_failure_emails_checkbox.setChecked(self._config.get("system", "enable_device_failure_emails", True))
+        self._enable_restart_emails_checkbox.setChecked(self._config.get("system", "enable_restart_emails", True))
         restart_time = self._config.get("system", "minutes_to_restart", "")
         self._restart_time_display.setText(str(restart_time))
         decision_cycle = self._config.get("system", "decision_cycle_seconds", "")
@@ -108,6 +139,9 @@ class SystemSettings(QWidget):
         # Re-enable signals
         self._enable_restart_checkbox.blockSignals(False)
         self._check_eintzofia_running_checkbox.blockSignals(False)
+        self._enable_eintzofia_auto_reopen_checkbox.blockSignals(False)
+        self._enable_device_failure_emails_checkbox.blockSignals(False)
+        self._enable_restart_emails_checkbox.blockSignals(False)
         self._restart_time_display.blockSignals(False)
         if hasattr(self, '_decision_cycle_display'):
             self._decision_cycle_display.blockSignals(False)
@@ -115,6 +149,9 @@ class SystemSettings(QWidget):
     def _save_to_config(self):
         self._config.set("system", "enable_restart", self._enable_restart_checkbox.isChecked())
         self._config.set("system", "check_eintzofia_running", self._check_eintzofia_running_checkbox.isChecked())
+        self._config.set("system", "enable_eintzofia_auto_reopen", self._enable_eintzofia_auto_reopen_checkbox.isChecked())
+        self._config.set("system", "enable_device_failure_emails", self._enable_device_failure_emails_checkbox.isChecked())
+        self._config.set("system", "enable_restart_emails", self._enable_restart_emails_checkbox.isChecked())
         # Save the same value for both restart and snooze time
         restart_time = self._restart_time_display.text()
         self._config.set("system", "minutes_to_restart", restart_time)
@@ -143,6 +180,11 @@ class SystemSettings(QWidget):
             except ValueError:
                 from PySide6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
+    
+    def _update_eintzofia_button_state(self):
+        """Update the Ein Tzofia button state - always enabled for manual use"""
+        self._open_ein_tzofia_btn.setEnabled(True)
+        self._open_ein_tzofia_btn.setToolTip("Open EinTzofia manually")
     
     def _open_ein_tzofia(self):
         """Open Ein Tzofia using OSManager"""

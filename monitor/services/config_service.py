@@ -55,12 +55,15 @@ class ConfigService:
                 "ein_tzofia_version": "12-07-25"
             },
             "system": {
-                "enable_restart": True,
+                "enable_restart": False,
                 "minutes_to_restart": "5",
                 "restart_cooldown_minutes": "2",
                 "startup_snooze_time": "5",
-                "check_eintzofia_running": True,
-                "decision_cycle_seconds": "180"
+                "check_eintzofia_running": False,
+                "enable_eintzofia_auto_reopen": False,
+                "decision_cycle_seconds": "180",
+                "enable_device_failure_emails": False,
+                "enable_restart_emails": False
             },
             "devices": {
                 "relay_fail_threshold": "30",

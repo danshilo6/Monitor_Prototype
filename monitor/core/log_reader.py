@@ -14,6 +14,7 @@ class LogReader:
     • On every `read_next()` call, if the calendar day changed *and* today's DB
       file exists, the reader switches to it automatically.
     • Results are returned as a pandas DataFrame.
+    • Opens and closes DB connection for each read operation.
     """
 
     def __init__(self, directory: Path, table: str = "logs", pattern: str = "logs_%Y-%m-%d.db") -> None:
@@ -24,12 +25,9 @@ class LogReader:
         # State file always goes in project root's data folder
         self._state_file = self._get_state_file_path()
         
-        self._conn: sqlite3.Connection | None = None
-        self._current_day: date | None = None
         self._last_id: int = 0
         
         self._load_state()
-        self._open_db_for(date.today())  # open today's DB (if present)
 
     def _load_state(self) -> None:
         """Load last_id only if it's from today, otherwise start fresh."""
@@ -68,6 +66,23 @@ class LogReader:
         project_root = Path(__file__).parent.parent.parent  # From monitor/core/ to project root
         return project_root / "data" / "log_reader_state.json"
 
+    def _get_db_path_for_day(self, day: date) -> Path:
+        """Get the database file path for a specific day."""
+        return self._dir / day.strftime(self._pattern)
+
+    def _open_connection(self, db_path: Path) -> sqlite3.Connection | None:
+        """Open a read-only connection to the database file."""
+        if not db_path.is_file():
+            return None
+            
+        conn = sqlite3.connect(
+            f"file:{db_path}?mode=ro",
+            uri=True,
+            check_same_thread=False,
+        )
+        conn.row_factory = sqlite3.Row
+        return conn
+
     # ---------- public API -------------------------------------------------
     def read_next(self, limit: int = None) -> pd.DataFrame:
         """
@@ -75,48 +90,55 @@ class LogReader:
         If limit is specified, return up to that many rows.
         Empty DataFrame => nothing new.
         """
-        self._maybe_switch_db()
-
-        # If no connection is available (database doesn't exist yet), return empty DataFrame
-        if self._conn is None:
+        today = date.today()
+        db_path = self._get_db_path_for_day(today)
+        
+        # Open connection for this read operation
+        conn = self._open_connection(db_path)
+        if conn is None:
             return pd.DataFrame()
 
-        if limit is None:
-            # Read all unread rows
-            df = pd.read_sql_query(
-                f"""
-                SELECT *
-                FROM {self._table}
-                WHERE id > ?
-                ORDER BY id ASC
-                """,
-                self._conn,
-                params=(self._last_id,),
-            )
-        else:
-            # Read up to limit rows (for backward compatibility)
-            df = pd.read_sql_query(
-                f"""
-                SELECT *
-                FROM {self._table}
-                WHERE id > ?
-                ORDER BY id ASC
-                LIMIT ?
-                """,
-                self._conn,
-                params=(self._last_id, limit),
-            )
+        try:
+            if limit is None:
+                # Read all unread rows
+                df = pd.read_sql_query(
+                    f"""
+                    SELECT *
+                    FROM {self._table}
+                    WHERE id > ?
+                    ORDER BY id ASC
+                    """,
+                    conn,
+                    params=(self._last_id,),
+                )
+            else:
+                # Read up to limit rows (for backward compatibility)
+                df = pd.read_sql_query(
+                    f"""
+                    SELECT *
+                    FROM {self._table}
+                    WHERE id > ?
+                    ORDER BY id ASC
+                    LIMIT ?
+                    """,
+                    conn,
+                    params=(self._last_id, limit),
+                )
 
-        if not df.empty:
-            self._last_id = int(df["id"].iloc[-1])
-            self._save_state()  # Save state after reading new data
+            if not df.empty:
+                print(f"successfuly read from logs db file {db_path}")
+                self._last_id = int(df["id"].iloc[-1])
+                self._save_state()  # Save state after reading new data
 
-        return df
+            return df
+            
+        finally:
+            # Always close the connection after the read operation
+            conn.close()
 
     def close(self) -> None:
-        self._save_state()  # Save state on close
-        if self._conn:
-            self._conn.close()
+        """Save state on close. No persistent connection to close."""
+        self._save_state()
 
     @staticmethod
     def reset_state() -> None:
@@ -137,37 +159,4 @@ class LogReader:
                 
         except Exception as e:
             print(f"Error resetting LogReader state: {e}")
-
-    # ---------- internal helpers ------------------------------------------
-    def _maybe_switch_db(self) -> None:
-        today = date.today()
-        if today != self._current_day:
-            self._open_db_for(today)
-
-    def _open_db_for(self, day: date) -> None:
-        db_path = self._dir / day.strftime(self._pattern)
-
-        # If today's file doesn't exist yet, keep current connection (if any)
-        if not db_path.is_file():
-            return
-
-        if self._conn:
-            self._conn.close()
-
-        self._conn = sqlite3.connect(
-            f"file:{db_path}?mode=ro",
-            uri=True,
-            check_same_thread=False,
-        )
-        self._conn.row_factory = sqlite3.Row
-
-        self._current_day = day
-        
-        # When switching to a new day, check if we should restore state or start fresh
-        if day == date.today():
-            # For today, we might have a saved last_id - it was loaded in _load_state()
-            pass  # Keep the last_id from _load_state()
-        else:
-            # For any other day (shouldn't happen in normal operation), start from 0
-            self._last_id = 0
 

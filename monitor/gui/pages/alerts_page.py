@@ -2,12 +2,43 @@
 
 from PySide6.QtWidgets import QVBoxLayout, QLabel, QTableView, QHeaderView, QAbstractItemView
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPainter, QFont
 from monitor.gui.pages.base_page import BasePage
 from monitor.gui.models.alert_table_model import AlertTableModel
 from monitor.gui.delegates.button_delegate import IconButtonDelegate
 from monitor.gui.utils.paths import get_icon_path
 from monitor.services.alert_models import Alert
 from typing import List
+
+
+class EmptyTableView(QTableView):
+    """Custom QTableView that shows a message when empty"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.empty_message = "Everything is working!\nThere are no alerts"
+    
+    def paintEvent(self, event):
+        """Override paint event to show empty message when table is empty"""
+        super().paintEvent(event)
+        
+        # Only show message if model has no data
+        if self.model() and self.model().rowCount() == 0:
+            painter = QPainter(self.viewport())
+            painter.save()
+            
+            # Set font and color for the message
+            font = QFont()
+            font.setPointSize(12)
+            painter.setFont(font)
+            painter.setPen(Qt.GlobalColor.gray)
+            
+            # Draw text centered in the viewport
+            rect = self.viewport().rect()
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.empty_message)
+            
+            painter.restore()
+
 
 class AlertsPage(BasePage):
     """Alerts management page with Model/View pattern"""
@@ -32,7 +63,7 @@ class AlertsPage(BasePage):
         
         # Create model and view
         self.alert_model = AlertTableModel(self)
-        self.alert_view = QTableView(self)
+        self.alert_view = EmptyTableView(self)
         self.alert_view.setObjectName("alertsTable")  # For CSS styling
         self.alert_view.setModel(self.alert_model)
         

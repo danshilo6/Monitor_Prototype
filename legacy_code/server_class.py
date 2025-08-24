@@ -19,12 +19,12 @@ class ServerManager:
         self.parent = parent
         self.os_manager = os_manager
         #check if ran as unfrozen code
-        if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'frozen')):
-            self.base_url = 'http://127.0.0.1:5000'
-        else:
-            self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
-
-
+        #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
+        #    self.base_url = 'http://127.0.0.1:5000'
+        #else:
+        #    self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
+        
+        self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
 
         if self.base_url == 'http://127.0.0.1:5000':
             print("DEBUG: SENDING LOCALLY")
@@ -218,7 +218,11 @@ class ServerManager:
     def send_email(self,subject,message,emails):
 
         url = f"{self.base_url}/send_email"
+        print(url)
         device_id = self.parent.osManager.generate_device_id()
+
+        success_count = 0
+        total_emails =len(emails)
 
         for email in emails:
             # Prepare the payload
@@ -232,9 +236,17 @@ class ServerManager:
 
             try:
                 response = requests.post(url, json=payload)
+                print(f"Respone status: {response.status_code}")
+                print(f"Respone text: {response.text}")
+                if response.status_code == 200:
+                    success_count += 1
+                    print(f"notification for {email} sent successfuly to server")
+                else:
+                    print(f"failed to send notification for {email}")
             
             except Exception as e:
                 print("error",e)
+        return success_count == total_emails
 
     async def download_monitor_files(self):
         # Get the monitor directory path where files will be saved

@@ -63,7 +63,6 @@ class OSManager:
         """
         self.config_service = config_service
         self.current_os = platform.system()
-        print(f"current_os: {self.current_os}")
         
         # Create mock parent and initialize legacy os_manager
         self.mock_parent = MockParent(config_service)
