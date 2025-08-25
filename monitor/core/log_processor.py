@@ -181,7 +181,7 @@ class LogProcessor:
         # Default to unknown if no pattern matches
         return DeviceType.UNKNOWN
     
-    def _create_new_device(self, device_id: str, device_type: str, log_status: str) -> DeviceInfo:
+    def _create_new_device(self, device_id: str, device_type: str, log_status: str, last_updated: datetime) -> DeviceInfo:
         """
         Create a new device with initial status.
         
@@ -189,6 +189,7 @@ class LogProcessor:
             device_id: The device identifier
             device_type: The device type from the log entry
             log_status: The initial status from the first log entry
+            last_updated: Timestamp from the log entry
             
         Returns:
             New DeviceInfo instance
@@ -201,19 +202,21 @@ class LogProcessor:
             last_log_consecutive_count=1,
             success_count=1 if log_status == 'success' else 0,
             fail_count=1 if log_status == 'fail' else 0,
-            recent_pattern='S' if log_status == 'success' else 'F'
+            recent_pattern='S' if log_status == 'success' else 'F',
+            last_updated=last_updated
         )
         
         self.logger.debug(f"Created new device: {device_id} (type: {device_type}, initial status: {log_status})")
         return device_info
     
-    def _update_existing_device(self, device: DeviceInfo, log_status: str, max_history: int = 50) -> DeviceInfo:
+    def _update_existing_device(self, device: DeviceInfo, log_status: str, last_updated: datetime, max_history: int = 50) -> DeviceInfo:
         """
         Update an existing device with a new log status.
         
         Args:
             device: The existing DeviceInfo to update
             log_status: The new status from the log entry
+            last_updated: Timestamp from the log entry
             max_history: Maximum history length to maintain
             
         Returns:
@@ -239,9 +242,9 @@ class LogProcessor:
         # Update the main status field to match the latest log status
         updated_device = replace(
             updated_device,
-            status=log_status
+            status=log_status,
+            last_updated=last_updated
         )
-        
         return updated_device
     
     def _get_logged_devices(self, new_logs: pd.DataFrame) -> list[str]:
@@ -286,6 +289,19 @@ class LogProcessor:
                 device_id = log_entry.get('device', '')
                 device_type = log_entry.get('device_type', 'unknown')  # Get device_type from log entry
                 log_status = log_entry.get('status', '')
+                # Parse timestamp from log entry, fallback to now if missing
+                log_timestamp = log_entry.get('timestamp')
+                if log_timestamp is not None:
+                    try:
+                        # Try parsing as string or datetime
+                        if isinstance(log_timestamp, str):
+                            last_updated = datetime.fromisoformat(log_timestamp)
+                        else:
+                            last_updated = pd.to_datetime(log_timestamp).to_pydatetime()
+                    except Exception:
+                        last_updated = datetime.now()
+                else:
+                    last_updated = datetime.now()
                 
                 if not device_id or not log_status:
                     self.logger.warning(f"Skipping log entry with missing device_id or status: {log_entry}")
@@ -296,10 +312,10 @@ class LogProcessor:
                     device_info = devices_in_memory[device_id]
                     # Update existing device
                     max_history = 50  # TODO: Get from config based on device_type
-                    updated_device = self._update_existing_device(device_info, log_status, max_history)
+                    updated_device = self._update_existing_device(device_info, log_status, last_updated, max_history)
                 else:
                     # Create new device using device_type from log entry
-                    updated_device = self._create_new_device(device_id, device_type, log_status)
+                    updated_device = self._create_new_device(device_id, device_type, log_status, last_updated)
                 
                 # Store updated device back in memory
                 devices_in_memory[device_id] = updated_device

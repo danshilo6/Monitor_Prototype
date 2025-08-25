@@ -9,12 +9,12 @@
   },
   "system": {
     "enable_restart": false,
-    "minutes_to_restart": "5",
+    "minutes_to_restart": "1",
     "restart_cooldown_minutes": "2",
-    "startup_snooze_time": "5",
+    "startup_snooze_time": "1",
     "check_eintzofia_running": false,
     "enable_eintzofia_auto_reopen": false,
-    "decision_cycle_seconds": "3",
+    "decision_cycle_seconds": "10",
     "enable_device_failure_emails": true,
     "enable_restart_emails": true
   },
@@ -25,6 +25,6 @@
     "history_length": "50"
   },
   "device": {
-    "signed_id": "60719bf12f482f5ff801ac5f4ddf3e0f3261e947835fd2b32865f3fd945aaf7581555e27e2536a4eb6f43dbfe8b797062f61c9ca6abfe165ce95e69c83f1ba472753cc125f47e3a3bff47fd61f83e1606a1de0dee51f2e814c7b71efc8efb36dcc74474fa37168d76884deb8e39216fbf1e6623391d588c81177fd85293036c0302e537c5d229d62aea172f1bc575f1de4be6fcf4f5705481c7f6b369900c5b58de2591c8c2fede37b7ee64978766374753aaa2d3a401c7e1cefe43cf7fb331e8b3398e402d61aa66fdadf029e2dbd099a8a73d36cdf12cacac641093627d013e87dbdf235789ffdd717ccb4c3818a1c63ab49496d01fb1767ef1c0a48cf9612"
+    "signed_id": "96640f183045e1ed04e5603f1bccc086c408381d35578b74eae9dd023dee8d364ea70f886de4928cd77355792f0801f9f4f8afb7617f6cb5c1276b8e4f2fd606de5a19c18d23f9238eaec6184821bf367ad000817982bd00fd2f6dcbbd4615ba17a16ee7531de2274fcd997daffaeafb0f0dcc4b89d948a544097d83a6f2d06c4a74d4be2244dec51b5d1190c053dd3e916472bee7258648dd4d88babd40bdfa555f53251a11d3f853a72e92600c9fe6cedd492cacd18cd54bf2a6f5b04234d162796a89289d939e793d100413d3cd94c11efe0c802c273682988a7cc9f00e10887328b5006a4db7c61c42b2763db62364efc5e20bfac7b81ebf129eb445efb4"
   }
 }

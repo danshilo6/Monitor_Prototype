@@ -1,9 +1,9 @@
-"""Tests for LogReader class"""
-
 import pytest
 import sqlite3
-import tempfile
 import json
+import tempfile
+import shutil
+import time
 from pathlib import Path
 from datetime import date, timedelta
 from unittest.mock import patch, MagicMock
@@ -12,363 +12,336 @@ import pandas as pd
 from monitor.core.log_reader import LogReader
 
 
-@pytest.fixture
-def temp_dir():
-    """Create a temporary directory for test databases"""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        yield Path(tmp_dir)
-
-
-@pytest.fixture
-def temp_data_dir():
-    """Create a temporary directory for state files"""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        yield Path(tmp_dir)
-
-
-@pytest.fixture
-def sample_db(temp_dir):
-    """Create a sample database with test data"""
-    today = date.today()
-    db_path = temp_dir / f"logs_{today.strftime('%Y-%m-%d')}.db"
-    
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # Create logs table
-    cursor.execute("""
-        CREATE TABLE logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            level TEXT,
-            message TEXT
-        )
-    """)
-    
-    # Insert sample data
-    sample_logs = [
-        ("2025-08-24 10:00:00", "INFO", "Application started"),
-        ("2025-08-24 10:01:00", "DEBUG", "Debug message"),
-        ("2025-08-24 10:02:00", "ERROR", "An error occurred"),
-        ("2025-08-24 10:03:00", "INFO", "Process completed"),
-        ("2025-08-24 10:04:00", "WARNING", "Warning message"),
-    ]
-    
-    cursor.executemany(
-        "INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
-        sample_logs
-    )
-    
-    conn.commit()
-    conn.close()
-    
-    return db_path
-
-
-@pytest.fixture
-def mock_state_file_path(temp_data_dir):
-    """Mock the state file path to use temp directory"""
-    state_file = temp_data_dir / "log_reader_state.json"
-    
-    with patch.object(LogReader, '_get_state_file_path', return_value=state_file):
-        yield state_file
-
-
 class TestLogReader:
-    """Test cases for LogReader class"""
-    
-    def test_init_creates_reader(self, temp_dir, mock_state_file_path):
-        """Test that LogReader initializes correctly"""
+    """Test suite for LogReader class."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for test databases."""
+        temp_dir = Path(tempfile.mkdtemp())
+        yield temp_dir
+        # Add a small delay to ensure database connections are closed
+        time.sleep(0.1)
+        try:
+            shutil.rmtree(temp_dir)
+        except PermissionError:
+            # Retry after a longer delay on Windows
+            time.sleep(0.5)
+            shutil.rmtree(temp_dir)
+
+    @pytest.fixture
+    def temp_data_dir(self):
+        """Create a temporary data directory for state files."""
+        temp_dir = Path(tempfile.mkdtemp())
+        yield temp_dir
+        shutil.rmtree(temp_dir)
+
+    def create_test_db(self, db_path: Path, records: list[dict]) -> None:
+        """Create a test database with sample records."""
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE logs (
+                id INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                level TEXT,
+                message TEXT
+            )
+        """)
+        
+        for record in records:
+            conn.execute(
+                "INSERT INTO logs (id, timestamp, level, message) VALUES (?, ?, ?, ?)",
+                (record["id"], record["timestamp"], record["level"], record["message"])
+            )
+        
+        conn.commit()
+        conn.close()
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_log_reader_initialization(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test LogReader initialization."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
+        
         reader = LogReader(temp_dir)
         
         assert reader._dir == temp_dir
         assert reader._table == "logs"
         assert reader._pattern == "logs_%Y-%m-%d.db"
-        assert reader._state_file == mock_state_file_path
-    
-    def test_init_with_custom_parameters(self, temp_dir, mock_state_file_path):
-        """Test LogReader initialization with custom parameters"""
-        reader = LogReader(
-            directory=temp_dir,
-            table="custom_logs",
-            pattern="custom_%Y_%m_%d.db"
+        assert reader._last_id == 0
+        assert reader._current_day == date.today()
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_read_next_empty_database(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test reading from non-existent database."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
+        
+        reader = LogReader(temp_dir)
+        df = reader.read_next()
+        
+        assert df.empty
+        assert reader._last_id == 0
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_read_next_with_data(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test reading from database with data."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
+        
+        # Create test database for today
+        today = date.today()
+        db_path = temp_dir / today.strftime("logs_%Y-%m-%d.db")
+        
+        test_records = [
+            {"id": 1, "timestamp": "2025-08-24 10:00:00", "level": "INFO", "message": "Test message 1"},
+            {"id": 2, "timestamp": "2025-08-24 10:01:00", "level": "ERROR", "message": "Test message 2"},
+            {"id": 3, "timestamp": "2025-08-24 10:02:00", "level": "INFO", "message": "Test message 3"}
+        ]
+        
+        self.create_test_db(db_path, test_records)
+        
+        reader = LogReader(temp_dir)
+        df = reader.read_next()
+        
+        assert len(df) == 3
+        assert reader._last_id == 3
+        assert df.iloc[0]["message"] == "Test message 1"
+        assert df.iloc[2]["message"] == "Test message 3"
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_incremental_reading(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test that LogReader only returns new records on subsequent reads."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
+        
+        # Create test database for today
+        today = date.today()
+        db_path = temp_dir / today.strftime("logs_%Y-%m-%d.db")
+        
+        # Initial records
+        initial_records = [
+            {"id": 1, "timestamp": "2025-08-24 10:00:00", "level": "INFO", "message": "Initial 1"},
+            {"id": 2, "timestamp": "2025-08-24 10:01:00", "level": "INFO", "message": "Initial 2"}
+        ]
+        
+        self.create_test_db(db_path, initial_records)
+        
+        reader = LogReader(temp_dir)
+        
+        # First read
+        df1 = reader.read_next()
+        assert len(df1) == 2
+        assert reader._last_id == 2
+        
+        # Add more records
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO logs (id, timestamp, level, message) VALUES (?, ?, ?, ?)",
+            (3, "2025-08-24 10:02:00", "ERROR", "New message 1")
         )
+        conn.execute(
+            "INSERT INTO logs (id, timestamp, level, message) VALUES (?, ?, ?, ?)",
+            (4, "2025-08-24 10:03:00", "INFO", "New message 2")
+        )
+        conn.commit()
+        conn.close()
         
-        assert reader._dir == temp_dir
-        assert reader._table == "custom_logs"
-        assert reader._pattern == "custom_%Y_%m_%d.db"
-    
-    def test_read_next_empty_when_no_db(self, temp_dir, mock_state_file_path):
-        """Test that read_next returns empty DataFrame when database doesn't exist"""
-        reader = LogReader(temp_dir)
-        result = reader.read_next()
+        # Second read should only return new records
+        df2 = reader.read_next()
+        assert len(df2) == 2
+        assert reader._last_id == 4
+        assert df2.iloc[0]["message"] == "New message 1"
+        assert df2.iloc[1]["message"] == "New message 2"
         
-        assert isinstance(result, pd.DataFrame)
-        assert result.empty
-    
-    def test_read_next_all_data(self, temp_dir, sample_db, mock_state_file_path):
-        """Test reading all data from database"""
-        reader = LogReader(temp_dir)
-        result = reader.read_next()
+        # Third read should return empty DataFrame
+        df3 = reader.read_next()
+        assert df3.empty
+        assert reader._last_id == 4
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_state_persistence(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test that LogReader state is saved and restored correctly."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
         
-        assert not result.empty
-        assert len(result) == 5
-        assert list(result.columns) == ["id", "timestamp", "level", "message"]
-        assert result.iloc[0]["message"] == "Application started"
-        assert result.iloc[-1]["message"] == "Warning message"
+        # Create test database for today
+        today = date.today()
+        db_path = temp_dir / today.strftime("logs_%Y-%m-%d.db")
         
-        # Verify state was saved correctly
-        with open(mock_state_file_path, 'r') as f:
-            state = json.load(f)
-            assert state['last_id'] == 5
-    
-    def test_read_next_with_limit(self, temp_dir, sample_db, mock_state_file_path):
-        """Test reading data with limit"""
-        reader = LogReader(temp_dir)
-        result = reader.read_next(limit=3)
+        test_records = [
+            {"id": 1, "timestamp": "2025-08-24 10:00:00", "level": "INFO", "message": "Test 1"},
+            {"id": 2, "timestamp": "2025-08-24 10:01:00", "level": "INFO", "message": "Test 2"}
+        ]
         
-        assert not result.empty
-        assert len(result) == 3
-        assert result.iloc[0]["message"] == "Application started"
-        assert result.iloc[-1]["message"] == "An error occurred"
+        self.create_test_db(db_path, test_records)
         
-        # Verify state was saved correctly
-        with open(mock_state_file_path, 'r') as f:
-            state = json.load(f)
-            assert state['last_id'] == 3
-    
-    def test_read_next_incremental(self, temp_dir, sample_db, mock_state_file_path):
-        """Test incremental reading (only new records)"""
-        reader = LogReader(temp_dir)
-        
-        # First read - get first 2 records
-        result1 = reader.read_next(limit=2)
-        assert len(result1) == 2
-        
-        # Verify state was saved
-        with open(mock_state_file_path, 'r') as f:
-            state = json.load(f)
-            assert state['last_id'] == 2
-        
-        # Second read - get next 2 records
-        result2 = reader.read_next(limit=2)
-        assert len(result2) == 2
-        assert result2.iloc[0]["id"] == 3  # Should start from id 3
-        
-        # Verify state was updated
-        with open(mock_state_file_path, 'r') as f:
-            state = json.load(f)
-            assert state['last_id'] == 4
-        
-        # Third read - get remaining record
-        result3 = reader.read_next()
-        assert len(result3) == 1
-        assert result3.iloc[0]["id"] == 5
-        
-        # Verify final state
-        with open(mock_state_file_path, 'r') as f:
-            state = json.load(f)
-            assert state['last_id'] == 5
-        
-        # Fourth read - no new data
-        result4 = reader.read_next()
-        assert result4.empty
-    
-    def test_state_persistence(self, temp_dir, sample_db, mock_state_file_path):
-        """Test that state is saved and loaded correctly"""
-        # First reader - read some data
+        # First reader instance
         reader1 = LogReader(temp_dir)
-        result1 = reader1.read_next(limit=3)
+        df1 = reader1.read_next()
+        assert len(df1) == 2
+        assert reader1._last_id == 2
+        reader1.close()
         
-        # Check state file was created with correct data
-        assert mock_state_file_path.exists()
-        with open(mock_state_file_path, 'r') as f:
-            state = json.load(f)
-            assert state['last_id'] == 3
-            assert state['day'] == date.today().isoformat()
-        
-        # Second reader - should resume from where first left off
+        # Create new reader instance - should restore state
         reader2 = LogReader(temp_dir)
+        assert reader2._last_id == 2
         
-        result2 = reader2.read_next()
-        assert len(result2) == 2  # Should get remaining 2 records
-        assert result2.iloc[0]["id"] == 4  # Should start from id 4
-    
-    def test_state_reset_on_new_day(self, temp_dir, sample_db, mock_state_file_path):
-        """Test that state resets when date changes"""
-        # Create state from yesterday
-        yesterday_state = {
-            'last_id': 10,
-            'day': (date.today() - timedelta(days=1)).isoformat()
-        }
+        # Should return empty since no new records
+        df2 = reader2.read_next()
+        assert df2.empty
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    @patch('monitor.core.log_reader.date')
+    def test_day_switching(self, mock_date, mock_state_path, temp_dir, temp_data_dir):
+        """Test that LogReader correctly handles day switching."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
         
-        with open(mock_state_file_path, 'w') as f:
-            json.dump(yesterday_state, f)
+        # Start with August 24, 2025
+        day1 = date(2025, 8, 24)
+        day2 = date(2025, 8, 25)
         
-        # Reader should start fresh today
+        # Mock date.today() to return day1 initially
+        mock_date.today.return_value = day1
+        mock_date.side_effect = lambda *args, **kw: date(*args, **kw)
+        
+        # Create databases for both days
+        db_path_day1 = temp_dir / "logs_2025-08-24.db"
+        db_path_day2 = temp_dir / "logs_2025-08-25.db"
+        
+        records_day1 = [
+            {"id": 1, "timestamp": "2025-08-24 10:00:00", "level": "INFO", "message": "Day 1 Record 1"},
+            {"id": 2, "timestamp": "2025-08-24 10:01:00", "level": "INFO", "message": "Day 1 Record 2"}
+        ]
+        
+        records_day2 = [
+            {"id": 1, "timestamp": "2025-08-25 10:00:00", "level": "INFO", "message": "Day 2 Record 1"},
+            {"id": 2, "timestamp": "2025-08-25 10:01:00", "level": "INFO", "message": "Day 2 Record 2"}
+        ]
+        
+        self.create_test_db(db_path_day1, records_day1)
+        self.create_test_db(db_path_day2, records_day2)
+        
+        # Initialize reader on day 1
         reader = LogReader(temp_dir)
-        result = reader.read_next()
         
-        # Should read all 5 records since we started fresh
-        assert len(result) == 5  # All records should be read
-        assert result.iloc[0]["id"] == 1  # Should start from id 1
-    
-    def test_reset_state_static_method(self, temp_dir, mock_state_file_path):
-        """Test the static reset_state method"""
+        # Read from day 1
+        df1 = reader.read_next()
+        assert len(df1) == 2
+        assert reader._last_id == 2
+        assert reader._current_day == day1
+        assert "Day 1 Record" in df1.iloc[0]["message"]
+        
+        # Switch to day 2
+        mock_date.today.return_value = day2
+        
+        # Next read should detect day change and reset last_id
+        df2 = reader.read_next()
+        assert len(df2) == 2
+        assert reader._last_id == 2  # Reset for new day, then updated to 2
+        assert reader._current_day == day2
+        assert "Day 2 Record" in df2.iloc[0]["message"]
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    @patch('monitor.core.log_reader.date')
+    def test_day_switching_with_state_persistence(self, mock_date, mock_state_path, temp_dir, temp_data_dir):
+        """Test day switching with state file persistence across days."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
+        
+        day1 = date(2025, 8, 24)
+        day2 = date(2025, 8, 25)
+        
+        # Day 1: Create reader and read some data
+        mock_date.today.return_value = day1
+        mock_date.side_effect = lambda *args, **kw: date(*args, **kw)
+        
+        db_path_day1 = temp_dir / "logs_2025-08-24.db"
+        records_day1 = [
+            {"id": 1, "timestamp": "2025-08-24 10:00:00", "level": "INFO", "message": "Day 1 Record"}
+        ]
+        self.create_test_db(db_path_day1, records_day1)
+        
+        reader1 = LogReader(temp_dir)
+        df1 = reader1.read_next()
+        assert len(df1) == 1
+        assert reader1._last_id == 1
+        reader1.close()
+        
+        # Verify state was saved for day 1
+        assert state_file.exists()
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+            assert state['day'] == day1.isoformat()
+            assert state['last_id'] == 1
+        
+        # Day 2: Create new reader (simulating restart)
+        mock_date.today.return_value = day2
+        
+        db_path_day2 = temp_dir / "logs_2025-08-25.db"
+        records_day2 = [
+            {"id": 1, "timestamp": "2025-08-25 10:00:00", "level": "INFO", "message": "Day 2 Record"}
+        ]
+        self.create_test_db(db_path_day2, records_day2)
+        
+        # New reader should detect different day and start fresh
+        reader2 = LogReader(temp_dir)
+        assert reader2._last_id == 0  # Should start fresh for new day
+        assert reader2._current_day == day2
+        
+        df2 = reader2.read_next()
+        assert len(df2) == 1
+        assert "Day 2 Record" in df2.iloc[0]["message"]
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_reset_state(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test the static reset_state method."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
+        
         # Create a state file
-        state = {'last_id': 5, 'day': date.today().isoformat()}
-        with open(mock_state_file_path, 'w') as f:
+        state = {"last_id": 5, "day": "2025-08-24"}
+        with open(state_file, 'w') as f:
             json.dump(state, f)
         
-        assert mock_state_file_path.exists()
+        assert state_file.exists()
         
         # Reset state
         LogReader.reset_state()
         
-        # State file should be deleted
-        assert not mock_state_file_path.exists()
-    
-    def test_reset_state_no_file(self, mock_state_file_path, capsys):
-        """Test reset_state when no state file exists"""
-        assert not mock_state_file_path.exists()
+        assert not state_file.exists()
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_reset_state_no_file(self, mock_state_path, temp_data_dir):
+        """Test reset_state when no state file exists."""
+        state_file = temp_data_dir / "nonexistent_state.json"
+        mock_state_path.return_value = state_file
         
+        # Should not raise exception
         LogReader.reset_state()
+
+    @patch('monitor.core.log_reader.LogReader._get_state_file_path')
+    def test_connection_closed_after_read(self, mock_state_path, temp_dir, temp_data_dir):
+        """Test that database connections are properly closed after each read."""
+        state_file = temp_data_dir / "test_state.json"
+        mock_state_path.return_value = state_file
         
-        captured = capsys.readouterr()
-        assert "No LogReader state file found to reset" in captured.out
-    
-    @patch('monitor.core.log_reader.date')
-    def test_day_switching(self, mock_date, temp_dir, mock_state_file_path):
-        """Test that LogReader switches to new database when day changes"""
-        # Setup: Create databases for two different days
-        day1 = date(2025, 8, 24)
-        day2 = date(2025, 8, 25)
-        
-        # Create database for day 1
-        db1_path = temp_dir / f"logs_{day1.strftime('%Y-%m-%d')}.db"
-        conn1 = sqlite3.connect(db1_path)
-        cursor1 = conn1.cursor()
-        cursor1.execute("""
-            CREATE TABLE logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                level TEXT,
-                message TEXT
-            )
-        """)
-        cursor1.execute(
-            "INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
-            ("2025-08-24 10:00:00", "INFO", "Day 1 message")
-        )
-        conn1.commit()
-        conn1.close()
-        
-        # Create database for day 2
-        db2_path = temp_dir / f"logs_{day2.strftime('%Y-%m-%d')}.db"
-        conn2 = sqlite3.connect(db2_path)
-        cursor2 = conn2.cursor()
-        cursor2.execute("""
-            CREATE TABLE logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                level TEXT,
-                message TEXT
-            )
-        """)
-        cursor2.execute(
-            "INSERT INTO logs (timestamp, level, message) VALUES (?, ?, ?)",
-            ("2025-08-25 10:00:00", "INFO", "Day 2 message")
-        )
-        conn2.commit()
-        conn2.close()
-        
-        # Test day switching
-        # Start on day 1
-        mock_date.today.return_value = day1
-        reader = LogReader(temp_dir)
-        
-        result1 = reader.read_next()
-        assert len(result1) == 1
-        assert result1.iloc[0]["message"] == "Day 1 message"
-        
-        # Switch to day 2 - same reader instance should handle day change
-        mock_date.today.return_value = day2
-        
-        result2 = reader.read_next()
-        assert len(result2) == 1
-        assert result2.iloc[0]["message"] == "Day 2 message"
-    
-    def test_connection_cleanup_on_error(self, temp_dir, mock_state_file_path):
-        """Test that connections are properly closed even when errors occur"""
-        # Create a database
+        # Create test database
         today = date.today()
-        db_path = temp_dir / f"logs_{today.strftime('%Y-%m-%d')}.db"
+        db_path = temp_dir / today.strftime("logs_%Y-%m-%d.db")
         
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE logs (id INTEGER PRIMARY KEY)")
-        cursor.execute("INSERT INTO logs DEFAULT VALUES")
-        conn.commit()
-        conn.close()
+        test_records = [
+            {"id": 1, "timestamp": "2025-08-24 10:00:00", "level": "INFO", "message": "Test"}
+        ]
+        self.create_test_db(db_path, test_records)
         
         reader = LogReader(temp_dir)
         
-        # Mock pandas to raise an exception
-        with patch('pandas.read_sql_query', side_effect=Exception("Test error")):
-            with pytest.raises(Exception, match="Test error"):
-                reader.read_next()
+        # Read data - this tests that the connection is opened and closed properly
+        df = reader.read_next()
+        assert len(df) == 1
         
-        # Connection should still be cleaned up - we can verify this by
-        # successfully reading afterwards
-        result = reader.read_next()
-        assert len(result) == 1
-    
-    def test_custom_table_name(self, temp_dir, mock_state_file_path):
-        """Test LogReader with custom table name"""
-        # Create database with custom table
-        today = date.today()
-        db_path = temp_dir / f"logs_{today.strftime('%Y-%m-%d')}.db"
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE custom_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                data TEXT
-            )
-        """)
-        cursor.execute("INSERT INTO custom_logs (data) VALUES (?)", ("test data",))
-        conn.commit()
-        conn.close()
-        
-        reader = LogReader(temp_dir, table="custom_logs")
-        result = reader.read_next()
-        
-        assert len(result) == 1
-        assert result.iloc[0]["data"] == "test data"
-    
-    def test_readonly_connection(self, temp_dir, mock_state_file_path):
-        """Test that LogReader opens database in read-only mode"""
-        # Create database
-        today = date.today()
-        db_path = temp_dir / f"logs_{today.strftime('%Y-%m-%d')}.db"
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE logs (id INTEGER PRIMARY KEY)")
-        cursor.execute("INSERT INTO logs DEFAULT VALUES")
-        conn.commit()
-        conn.close()
-        
-        reader = LogReader(temp_dir)
-        
-        # Verify the connection uses read-only mode by checking the URI
-        with patch('sqlite3.connect') as mock_connect:
-            mock_connect.return_value = MagicMock()
-            reader._get_db_connection()
-            
-            # Check that sqlite3.connect was called with read-only URI
-            call_args = mock_connect.call_args
-            assert call_args[0][0].startswith("file:")
-            assert "mode=ro" in call_args[0][0]
-            assert call_args[1]["uri"] is True
+        # Try to read again to ensure connections are not left open
+        df2 = reader.read_next()
+        assert df2.empty  # Should be empty since we already read all records

@@ -26,11 +26,14 @@ class LogReader:
         self._state_file = self._get_state_file_path()
         
         self._last_id: int = 0
+        self._current_day: date | None = None  # Track which day we're reading from
         
         self._load_state()
 
     def _load_state(self) -> None:
         """Load last_id only if it's from today, otherwise start fresh."""
+        self._current_day = date.today()  # Always set current day
+        
         try:
             if self._state_file.exists():
                 with open(self._state_file, 'r') as f:
@@ -59,6 +62,14 @@ class LogReader:
                 json.dump(state, f)
         except Exception:
             pass  # Don't crash if save fails
+
+    def _check_day_change(self) -> None:
+        """Check if day has changed and reset last_id if it has."""
+        today = date.today()
+        if self._current_day != today:
+            self._last_id = 0  # Reset for new day
+            self._current_day = today
+            self._save_state()  # Save the reset state
 
     @staticmethod
     def _get_state_file_path() -> Path:
@@ -90,6 +101,9 @@ class LogReader:
         If limit is specified, return up to that many rows.
         Empty DataFrame => nothing new.
         """
+        # Check if day has changed and reset if needed
+        self._check_day_change()
+        
         today = date.today()
         db_path = self._get_db_path_for_day(today)
         
@@ -99,6 +113,7 @@ class LogReader:
             return pd.DataFrame()
 
         try:
+            print(f"trying to read from logs db file {db_path}")
             if limit is None:
                 # Read all unread rows
                 df = pd.read_sql_query(

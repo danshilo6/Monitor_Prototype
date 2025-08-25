@@ -116,6 +116,9 @@ class DecisionEngine(QObject):
         # Initialize email service
         self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
         
+        print("\n\n\n TEST")
+        self.server_manager.send_email("SUBJECT","MESSAGE",["dan@bulltech.co.il"])
+        print("\n\n\n")
         # Initialize log processor with shared database (no timer - controlled by this engine)
         self.log_processor = LogProcessor(logs_directory, data_directory, self.devices_db)
         
@@ -523,6 +526,7 @@ class DecisionEngine(QObject):
         # Always create alerts for failed devices (let alert DB handle deduplication)
         if new_status == 'fail':
             if previous_status != 'fail':
+                print(f"DEVICE FAILED - {device_id}")
                 self.logger.warning(f"DEVICE FAILED - {device_id}")
                 # Send email notification for new device failure
                 self.device_failure_notification_requested.emit(device)

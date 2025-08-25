@@ -206,6 +206,7 @@ class EmailService:
                     email_addresses.append(email.strip())
             
             self.logger.debug(f"Retrieved {len(email_addresses)} email addresses from contacts database")
+            print(email_addresses)
             return email_addresses
             
         except Exception as e:
