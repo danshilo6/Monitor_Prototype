@@ -1,9 +1,10 @@
 """General settings tab"""
 
 from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QWidget, QLineEdit, 
-                               QPushButton, QFileDialog, QLabel)
+                               QPushButton, QFileDialog, QLabel, QMessageBox)
 from PySide6.QtCore import Qt, Signal
 from ...widgets.location_name_dialog import LocationNameDialog
+from monitor.core.os_manager import OSManager
 
 class GeneralSettings(QWidget):
     """General settings tab widget"""
@@ -14,6 +15,7 @@ class GeneralSettings(QWidget):
     def __init__(self, config_service):
         super().__init__()
         self._config = config_service
+        self._os_manager = OSManager(config_service)  # Initialize OSManager
         self._setup_ui()
         self._load_from_config()
     
@@ -87,6 +89,14 @@ class GeneralSettings(QWidget):
         
         # Add horizontal layout to main layout
         layout.addLayout(filepath_layout)
+        
+        # Open/Restart Ein Tzofia button
+        self._open_ein_tzofia_btn = QPushButton("Open/Reopen Ein Tzofia")
+        self._open_ein_tzofia_btn.setObjectName("open-button")
+        self._open_ein_tzofia_btn.clicked.connect(self._open_ein_tzofia)
+        self._open_ein_tzofia_btn.setEnabled(True)  # Always enabled for manual use
+        self._open_ein_tzofia_btn.setToolTip("Open EinTzofia manually")
+        layout.addWidget(self._open_ein_tzofia_btn)
     
     def _edit_location_name(self):
         """Open dialog to edit location name"""
@@ -143,3 +153,42 @@ class GeneralSettings(QWidget):
     def set_monitor_program_path(self, path: str):
         """Set the monitor program path"""
         self._filepath_display.setText(path)
+    
+    def _open_ein_tzofia(self):
+        """Open Ein Tzofia using OSManager"""
+        try:
+            print("Opening Ein Tzofia...")
+            
+            # Get EinTzofia path from config
+            eintzofia_path = self._config.get("general", "eintzofia_path", "")
+            
+            if not eintzofia_path:
+                QMessageBox.warning(
+                    self, 
+                    "EinTzofia Path Not Found", 
+                    "EinTzofia path is not configured.\n\n"
+                    "Please set the EinTzofia path first by clicking 'Choose File'."
+                )
+                return
+            
+            # Use OSManager to open the file
+            success = self._os_manager.open_file(eintzofia_path)
+            
+            if success:
+                print(f"Successfully opened EinTzofia: {eintzofia_path}")
+            else:
+                print(f"Failed to open EinTzofia: {eintzofia_path}")
+                QMessageBox.warning(
+                    self,
+                    "Failed to Open",
+                    f"Failed to open EinTzofia.\n\nPath: {eintzofia_path}\n\n"
+                    "Please check if the file exists and is executable."
+                )
+                
+        except Exception as e:
+            print(f"Error opening EinTzofia: {e}")
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"An error occurred while opening EinTzofia:\n\n{str(e)}"
+            )

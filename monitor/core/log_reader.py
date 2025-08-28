@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from datetime import date
 import pandas as pd
+from monitor.utils.path_utils import get_data_path
 
 
 class LogReader:
@@ -74,8 +75,7 @@ class LogReader:
     @staticmethod
     def _get_state_file_path() -> Path:
         """Get the path to the LogReader state file."""
-        project_root = Path(__file__).parent.parent.parent  # From monitor/core/ to project root
-        return project_root / "data" / "log_reader_state.json"
+        return Path(get_data_path("log_reader_state.json"))
 
     def _get_db_path_for_day(self, day: date) -> Path:
         """Get the database file path for a specific day."""

@@ -8,6 +8,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from monitor.log_setup import get_logger
+from monitor.utils.path_utils import get_data_path
 
 
 class DeviceStatusManager:
@@ -27,7 +28,7 @@ class DeviceStatusManager:
         # Device status tracking (persistent)
         self._device_statuses = {}  # {device_id: {'status': str, 'timestamp': str, 'type': str}}
         self._restart_info = {}  # {'last_restart_time': str, 'restart_count': int}
-        self._status_file = self._get_status_file_path()
+        self._status_file = Path(get_data_path("decision_engine_statuses.json"))
         
         # Load existing statuses
         self._load_device_statuses()
@@ -37,8 +38,7 @@ class DeviceStatusManager:
     @staticmethod
     def _get_status_file_path() -> Path:
         """Get path to the decision engine status file."""
-        project_root = Path(__file__).parent.parent.parent
-        return project_root / "data" / "decision_engine_statuses.json"
+        return Path(get_data_path("decision_engine_statuses.json"))
     
     def _load_device_statuses(self) -> None:
         """Load device statuses from JSON file."""

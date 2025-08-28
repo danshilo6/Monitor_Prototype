@@ -470,6 +470,19 @@ def main() -> int:
         
         # Create server manager for email/SMS services
         server_manager = create_server_manager(config_service)
+        
+        # ---------------------- AUTHENTICATION BEFORE MAIN WINDOW ----------------------
+        
+        # choose server
+        server_choice = config_service.get("general", "server_choice", "5000")   
+        server_manager.choose_server(server_choice)
+        print(f"Chosen server: {server_manager.legacy_server.base_url}")
+        # connect to server
+        authentication = authenticate_with_server(config_service, server_manager)
+        if not authentication:
+            logger.info("Authentication failed or cancelled - exiting application")
+            return 0
+
         testing = False
         if testing:
             try:
@@ -477,10 +490,8 @@ def main() -> int:
                 server_manager.send_email("SUBJECT","MESSAGE", ["dan@bulltech.co.il"])
             except Exception as e:
                 print(e)
-        # --- AUTHENTICATION BEFORE MAIN WINDOW ---
-        if not authenticate_with_server(config_service, server_manager):
-            logger.info("Authentication failed or cancelled - exiting application")
-            return 0
+
+        # -------------------------------------------------------------------------------
 
         # Create and setup thread manager with server manager
         thread_manager = create_thread_manager(config_service, alert_db, contact_db, server_manager)

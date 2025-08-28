@@ -7,6 +7,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, Signal
 from monitor.services.alert_models import Alert, AlertType
 from monitor.log_setup import get_logger
+from monitor.utils.path_utils import get_data_path
 # TODO: REMOVE TEST CODE BEFORE PRODUCTION - Start
 import threading
 import time
@@ -21,11 +22,17 @@ class AlertDatabase(QObject):
     alert_resolved = Signal(str)  # alert_id
     alerts_loaded = Signal(list)  # List[Alert]
     
-    def __init__(self, db_file: str = "data/alerts.db"):
+    def __init__(self, db_file: str = None):
         super().__init__()
         self.logger = get_logger("monitor.services.alert_db")
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(db_file), exist_ok=True)
+        
+        # Use absolute path relative to executable
+        if db_file is None:
+            db_file = get_data_path("alerts.db")
+        elif not os.path.isabs(db_file):
+            # Convert relative path to absolute path relative to executable
+            db_file = get_data_path(os.path.basename(db_file))
+            
         self.db_file = db_file
         self.logger.info(f"Initializing alert database: {db_file}")
         self._init_database()

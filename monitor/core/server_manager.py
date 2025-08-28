@@ -26,6 +26,7 @@ class MockParentForServer:
         self.VERSION = self._get_version()
         self.enable_pc_restart = self._get_restart_setting()
     
+
     def _get_location(self):
         """Get device location from config."""
         if self.config_service:
@@ -94,6 +95,19 @@ class ServerManager:
         
         self.logger.info("ServerManager initialized")
     
+    def choose_server(self, server_choice):
+        if server_choice == "5000":
+            self.update_server_url('http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000')
+        elif server_choice == '5001':
+            self.update_server_url('http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5001')
+        else:
+            # set to local
+            self.update_server_url('http://127.0.0.1:5000')
+
+    def update_server_url(self, url):
+        self.legacy_server.base_url = url
+        print(f"Connecting to server: {url}")
+
     def update_location_name(self, name):
         self.legacy_server.parent.settings['Location'] = name
 
@@ -130,7 +144,7 @@ class ServerManager:
                 return False
                 
             self.logger.info(f"Sending email to {len(emails)} recipients: {subject}")
-            print(f"SERVER EMAIL SEND: {subject} to {len(emails)} recipients")
+            print(f"\nSERVER EMAIL SEND: {subject} to {len(emails)} recipients")
             
             result = self.legacy_server.send_email(subject, message, emails)
             

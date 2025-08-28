@@ -185,6 +185,7 @@ class ThreadManager(QObject):
                 logs_directory=self.logs_directory,
                 data_directory=self.data_directory,
                 config_service=self.config_service,
+                server_manager=self.server_manager,
                 cycle_interval=self.cycle_interval,
             )
             

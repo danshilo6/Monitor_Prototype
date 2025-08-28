@@ -72,7 +72,7 @@ class DecisionEngine(QObject):
     device_recovery_notification_requested = Signal(object)  # Emits DeviceInfo
     
     def __init__(self, logs_directory: Path, data_directory: Path, 
-                 config_service: ConfigService = None, cycle_interval: float = 3.0):
+                 config_service: ConfigService = None, server_manager=None, cycle_interval: float = 3.0):
         """
         Initialize the decision engine.
         
@@ -80,6 +80,7 @@ class DecisionEngine(QObject):
             logs_directory: Directory containing the log database files
             data_directory: Directory containing the devices database
             config_service: Optional config service instance (creates new if None)
+            server_manager: Optional server manager instance (creates new if None)
             cycle_interval: Time in seconds between monitoring cycles
         """
         super().__init__()
@@ -106,8 +107,8 @@ class DecisionEngine(QObject):
         # Initialize OS manager
         self.os_manager = OSManager(self.config_service)
         
-        # Initialize server manager
-        self.server_manager = ServerManager(self.config_service, self.os_manager)
+        # Use provided server manager or create new one
+        self.server_manager = server_manager or ServerManager(self.config_service, self.os_manager)
         
         # Database connections
         self.devices_db = DevicesDatabase(data_directory / "devices.db")
@@ -116,9 +117,13 @@ class DecisionEngine(QObject):
         # Initialize email service
         self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
         
-        print("\n\n\n TEST")
-        self.server_manager.send_email("SUBJECT","MESSAGE",["dan@bulltech.co.il"])
-        print("\n\n\n")
+        
+        test = False
+        if test:
+            print("\n\n\n TEST")
+            self.server_manager.send_email("SUBJECT","MESSAGE",["dan@bulltech.co.il"])
+            print("\n\n\n")
+        
         # Initialize log processor with shared database (no timer - controlled by this engine)
         self.log_processor = LogProcessor(logs_directory, data_directory, self.devices_db)
         

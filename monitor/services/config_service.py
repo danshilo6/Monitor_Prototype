@@ -4,12 +4,21 @@ from pathlib import Path
 from typing import Any, Dict
 import threading
 from monitor.log_setup import get_logger
+from monitor.utils.path_utils import get_config_path
 
 class ConfigService:
     """Thread-safe service for loading and saving application settings to a JSON config file."""
 
-    def __init__(self, config_path: str = "config.json"):
+    def __init__(self, config_path: str = None):
         self.logger = get_logger("monitor.services.config_service")
+        
+        # Use absolute path relative to executable
+        if config_path is None:
+            config_path = get_config_path()
+        elif not Path(config_path).is_absolute():
+            # Convert relative path to absolute path relative to executable
+            config_path = get_config_path()
+        
         self._config_path = Path(config_path)
         self._config: Dict[str, Any] = {}
         self._lock = threading.RLock()  # Re-entrant lock for thread safety
@@ -48,16 +57,17 @@ class ConfigService:
         return {
             "general": {
                 "location_name": "",
-                "eintzofia_path": ""
+                "eintzofia_path": "",
+                "server_choice": "5001"
             },
             "versions": {
-                "monitor_version": "12-07-25",
+                "monitor_version": "27-08-2025",
                 "ein_tzofia_version": "12-07-25"
             },
             "system": {
                 "enable_restart": False,
                 "minutes_to_restart": "5",
-                "restart_cooldown_minutes": "2",
+                "restart_cooldown_minutes": "10",
                 "startup_snooze_time": "5",
                 "check_eintzofia_running": False,
                 "enable_eintzofia_auto_reopen": False,
@@ -67,7 +77,7 @@ class ConfigService:
             },
             "devices": {
                 "relay_fail_threshold": "30",
-                "camera_fail_threshold": "0.5",
+                "camera_fail_threshold": "0.1",
                 "camera_log_minutes": "20",
                 "history_length": "50"
             },

@@ -3,7 +3,6 @@
 from PySide6.QtWidgets import (QVBoxLayout, QHBoxLayout, QWidget, QLineEdit, QPushButton, 
                                QFormLayout, QCheckBox, QMessageBox, QLabel)
 from PySide6.QtCore import Qt
-from monitor.core.os_manager import OSManager
 
 class SystemSettings(QWidget):
     """System settings tab widget"""
@@ -11,7 +10,6 @@ class SystemSettings(QWidget):
     def __init__(self, config_service):
         super().__init__()
         self._config = config_service
-        self._os_manager = OSManager(config_service)  # Initialize OSManager
         self._setup_ui()
         self._load_from_config()
     
@@ -43,11 +41,6 @@ class SystemSettings(QWidget):
         self._enable_eintzofia_auto_reopen_checkbox.toggled.connect(self._save_to_config)
         form_layout.addRow("", self._enable_eintzofia_auto_reopen_checkbox)
 
-        # Email notifications section header
-        email_notifications_title = QLabel("Email Notifications:")
-        email_notifications_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        form_layout.addRow("", email_notifications_title)
-
         # Enable Device Failure Emails checkbox
         self._enable_device_failure_emails_checkbox = QCheckBox("Enable device failure emails")
         self._enable_device_failure_emails_checkbox.setObjectName("settings-checkbox")
@@ -59,14 +52,6 @@ class SystemSettings(QWidget):
         self._enable_restart_emails_checkbox.setObjectName("settings-checkbox")
         self._enable_restart_emails_checkbox.toggled.connect(self._save_to_config)
         form_layout.addRow("", self._enable_restart_emails_checkbox)
-
-        # Open/Restart Ein Tzofia button
-        self._open_ein_tzofia_btn = QPushButton("Open/Restart Ein Tzofia")
-        self._open_ein_tzofia_btn.setObjectName("open-button")
-        self._open_ein_tzofia_btn.clicked.connect(self._open_ein_tzofia)
-        self._open_ein_tzofia_btn.setEnabled(True)  # Always enabled for manual use
-        self._open_ein_tzofia_btn.setToolTip("Open EinTzofia manually")
-        form_layout.addRow("", self._open_ein_tzofia_btn)
 
         # Restart/Snooze Time title
         restart_time_title = QLabel("Restart/Snooze Time (minutes):")
@@ -181,55 +166,6 @@ class SystemSettings(QWidget):
                 from PySide6.QtWidgets import QMessageBox
                 QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
     
-    def _update_eintzofia_button_state(self):
-        """Update the Ein Tzofia button state - always enabled for manual use"""
-        self._open_ein_tzofia_btn.setEnabled(True)
-        self._open_ein_tzofia_btn.setToolTip("Open EinTzofia manually")
-    
-    def _open_ein_tzofia(self):
-        """Open Ein Tzofia using OSManager"""
-        try:
-            print("Opening Ein Tzofia...")
-            
-            # Get EinTzofia path from config
-            eintzofia_path = self._config.get("general", "eintzofia_path", "")
-            
-            if not eintzofia_path:
-                QMessageBox.warning(
-                    self, 
-                    "EinTzofia Path Not Found", 
-                    "EinTzofia path is not configured.\n\n"
-                    "Please set the EinTzofia path in General settings first."
-                )
-                return
-            
-            # Use OSManager to open the file
-            success = self._os_manager.open_file(eintzofia_path)
-            
-            if success:
-                print(f"Successfully opened EinTzofia: {eintzofia_path}")
-                QMessageBox.information(
-                    self,
-                    "EinTzofia Opened",
-                    "EinTzofia has been opened successfully."
-                )
-            else:
-                print(f"Failed to open EinTzofia: {eintzofia_path}")
-                QMessageBox.warning(
-                    self,
-                    "Failed to Open",
-                    f"Failed to open EinTzofia.\n\nPath: {eintzofia_path}\n\n"
-                    "Please check if the file exists and is executable."
-                )
-                
-        except Exception as e:
-            print(f"Error opening EinTzofia: {e}")
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while opening EinTzofia:\n\n{str(e)}"
-            )
-
     def _edit_decision_cycle(self):
         """Open dialog to edit decision engine cycle seconds"""
         from PySide6.QtWidgets import QInputDialog, QMessageBox

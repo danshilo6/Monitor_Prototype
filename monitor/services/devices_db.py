@@ -6,17 +6,22 @@ from typing import Dict, Optional, Tuple, List
 from datetime import datetime
 from monitor.log_setup import get_logger
 from monitor.services.devices_models import DeviceInfo
+from monitor.utils.path_utils import get_data_path
 
 
 class DevicesDatabase:
     """Database for persistent device storage using connection-per-operation pattern"""
     
-    def __init__(self, db_file: str = "data/devices.db"):
+    def __init__(self, db_file: str = None):
         self.logger = get_logger("monitor.services.devices_db")
         
-        # Store path, don't create persistent connection
-        if db_file != ":memory:" and os.path.dirname(db_file):
-            os.makedirs(os.path.dirname(db_file), exist_ok=True)
+        # Use absolute path relative to executable
+        if db_file is None:
+            db_file = get_data_path("devices.db")
+        elif db_file != ":memory:" and not os.path.isabs(db_file):
+            # Convert relative path to absolute path relative to executable
+            db_file = get_data_path(os.path.basename(db_file))
+        
         self.db_file = db_file
         
         self.logger.info(f"Initializing devices database: {db_file}")

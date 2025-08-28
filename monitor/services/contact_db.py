@@ -4,14 +4,21 @@ import sqlite3
 import os
 from typing import List, Tuple
 from monitor.log_setup import get_logger
+from monitor.utils.path_utils import get_data_path
 
 class ContactDatabase:
     """SQLite database for contact storage"""
     
-    def __init__(self, db_file: str = "data/contacts.db"):
+    def __init__(self, db_file: str = None):
         self.logger = get_logger("monitor.services.contact_db")
-        # Ensure data directory exists
-        os.makedirs(os.path.dirname(db_file), exist_ok=True)
+        
+        # Use absolute path relative to executable
+        if db_file is None:
+            db_file = get_data_path("contacts.db")
+        elif not os.path.isabs(db_file):
+            # Convert relative path to absolute path relative to executable
+            db_file = get_data_path(os.path.basename(db_file))
+            
         self.db_file = db_file
         self.logger.info(f"Initializing contact database: {db_file}")
         self._init_database()

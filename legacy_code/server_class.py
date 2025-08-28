@@ -26,10 +26,6 @@ class ServerManager:
         
         self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
 
-        if self.base_url == 'http://127.0.0.1:5000':
-            print("DEBUG: SENDING LOCALLY")
-        else:
-            print("DEBUG: SENDING TO SERVER")
     
     def upload_configuration(self):
         temp_dir_path = self.parent.osManager.get_temp_dir_path()
@@ -45,9 +41,10 @@ class ServerManager:
         """
         Uploads the specified zip file to the server and deletes the file afterwards.
         """
-        server_ip = 'ec2-16-171-143-39.eu-north-1.compute.amazonaws.com'
-        server_port = '5000'
-        server_url = f'http://{server_ip}:{server_port}/upload_folder_new'
+        #server_ip = 'ec2-16-171-143-39.eu-north-1.compute.amazonaws.com'
+        #server_port = '5000'
+        #server_url = f'http://{server_ip}:{server_port}/upload_folder_new'
+        server_url = f"{self.base_url}/upload_folder_new"
 
         try:
             with open(zip_path, 'rb') as zip_file:
@@ -72,14 +69,13 @@ class ServerManager:
         # fetch location and device_id
         location = self.parent.settings['Location']
         device_id = self.parent.osManager.generate_device_id()
-        print(f'Pulsing to server for PC ID: {device_id}')
-        print('ID:    ',device_id)
+        print(f'Pulsing to server {self.base_url} for PC ID: {device_id}')
         
         try:
             response = requests.post(server_url, json={'location': location,'password':password,'device_id':device_id,'return_ID':return_ID,'version':self.parent.VERSION})
             data = response.json()
             if response.status_code == 200:
-                print(f'Pulse sent successfully for PC ID: {location}')
+                print(f'Pulse sent successfully for {location}')
                 correct_password = True if data['correct_password'] == "True" else False
                 download_files = data['download_files']
 
@@ -108,7 +104,8 @@ class ServerManager:
 
     def get_configuration_options(self):
             # URL of your Flask server's /list_folders endpoint
-        url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000/list_folders'
+        # url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000/list_folders'
+        url = f"{self.base_url}/list_folders"
 
         try:
             # Send a GET request to the server
@@ -129,8 +126,8 @@ class ServerManager:
     
     def download_configurations(self,folder_name):
 
-        url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000/download_folder'
-
+        # url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000/download_folder'
+        url = f"{self.base_url}/download_folder"
         
         save_path = self.parent.osManager.get_temp_dir_path()
         save_path = os.path.join(save_path,"configurations.zip")
@@ -218,7 +215,6 @@ class ServerManager:
     def send_email(self,subject,message,emails):
 
         url = f"{self.base_url}/send_email"
-        print(url)
         device_id = self.parent.osManager.generate_device_id()
 
         success_count = 0
