@@ -102,7 +102,7 @@ class ServerManager:
             self.update_server_url('http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5001')
         else:
             # set to local
-            self.update_server_url('http://127.0.0.1:5000')
+            self.update_server_url('http://127.0.0.1:5001')
 
     def update_server_url(self, url):
         self.legacy_server.base_url = url
@@ -110,6 +110,9 @@ class ServerManager:
 
     def update_location_name(self, name):
         self.legacy_server.parent.settings['Location'] = name
+
+    def update_ein_tzofia_path(self, path):
+        self.legacy_server.parent.settings['File_Path'] = path
 
     # Core server communication methods
     def pulse_to_server(self, password='', return_id=False):

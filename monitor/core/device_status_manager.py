@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from monitor.log_setup import get_logger
 from monitor.utils.path_utils import get_data_path
+from monitor.services.devices_models import DeviceType
 
 
 class DeviceStatusManager:
@@ -114,6 +115,14 @@ class DeviceStatusManager:
     def get_device_statuses(self) -> dict:
         """Get a copy of all device statuses."""
         return self._device_statuses.copy()
+    
+    def get_threads_status(self) -> dict:
+        """Get all threads id's and status that are currently in the device status json file"""
+        threads = {}
+        for device_id, device_info in self._device_statuses.items():
+            if device_info.get('type') == DeviceType.THREAD.value:
+                threads[device_id] = device_info.get('status', 'unknown')
+        return threads
     
     def get_restart_info(self) -> dict:
         """Get a copy of restart information."""

@@ -145,7 +145,7 @@ class EmailService:
         except Exception as e:
             self.logger.error(f"Failed to send device recovery notification for {device.device_id}: {e}")
     
-    def send_restart_notification(self) -> None:
+    def send_restart_notification(self, threads=None, send_threads_info=False) -> None:
         """
         Send email notification about a system restart initiated by the monitor.
         """
@@ -171,11 +171,21 @@ class EmailService:
             location_name = self._get_location_name()
             
             subject = f"{location_name} - System Restart Notification"
-            message = f"The monitor at {location_name} has decided to perform a system restart at {restart_time}"
-            
+            message = f"The monitor at {location_name} has decided to perform a system restart at {restart_time}."
+            if send_threads_info:
+                message += f"\nCurrent thread statuses:\n"
+                if threads:
+                    for thread_id, status in threads.items():
+                        message += f"  - Thread {thread_id}: {status}\n"
+                else:
+                    message += "  - No active threads"
+
             # Send email via server manager or mock
             if self.server_manager:
                 success = self.server_manager.send_email(subject, message, email_addresses)
+                print(f"\nEMAIL SENt:")
+                print(f"Subject:\n{subject}")
+                print(f"Message:\n{message}\n")
                 
                 if success:
                     self.logger.info(f"Restart notification sent to {len(email_addresses)} recipients")

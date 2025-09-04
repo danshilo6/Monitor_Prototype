@@ -88,18 +88,24 @@ class OSManager:
     # Modern cross-platform method
     def find_eintzofia_executable(self, search_dir: Path) -> str:
         """
-        Find EinTzofia executable in the specified directory.
+        Find EinTzofia executable with the newest version in the specified directory.
         
         Cross-platform function that looks for executable files starting with "EinTzofia":
         - Windows: Searches for EinTzofia*.exe files
         - Linux/Unix: Searches for executable files starting with "EinTzofia"
         
+        Finds the executable with the newest version based on the date format dd_mm_yy
+        in the filename (e.g., EinTzofia_01_09_25.exe for September 1, 2025).
+        
         Args:
             search_dir: Directory to search in
             
         Returns:
-            str: Path to EinTzofia executable, or empty string if not found
+            str: Path to EinTzofia executable with newest version, or empty string if not found
         """
+        import re
+        from datetime import datetime
+        
         logger = get_logger("monitor.core.os_manager")
         
         if not search_dir.exists() or not search_dir.is_dir():
@@ -124,19 +130,72 @@ class OSManager:
             
             if not exe_files:
                 logger.debug(f"No EinTzofia {file_type} found in: {search_dir}")
+                print(f"DEBUG: No EinTzofia {file_type} found in: {search_dir}")
                 return ""
             
-            # Use the first matching executable
-            exe_path = exe_files[0]
-            logger.info(f"Found EinTzofia executable: {exe_path}")
-            print(f"DEBUG: Found EinTzofia executable: {exe_path}")
             
-            if len(exe_files) > 1:
-                logger.warning(f"Multiple EinTzofia {file_type} found, using: {exe_path}")
-                logger.debug(f"Other files: {[str(f) for f in exe_files[1:]]}")
-                print(f"DEBUG: Multiple EinTzofia files found, using first one")
+            # If only one file found, return it
+            if len(exe_files) == 1:
+                exe_path = exe_files[0]
+                logger.info(f"Found EinTzofia executable: {exe_path}")
+                print(f"DEBUG: Found EinTzofia executable: {exe_path}")
+                return str(exe_path)
             
-            return str(exe_path)
+            # Multiple files found - find the one with the newest version date
+            newest_file = None
+            newest_date = None
+            
+            # Regex pattern to match date format dd_mm_yy in filename
+            date_pattern = r'(\d{2})_(\d{2})_(\d{2})'
+            
+            for exe_file in exe_files:
+                filename = exe_file.name
+                match = re.search(date_pattern, filename)
+                
+                print(f"Found EinTzofia executable: {newest_file}")
+
+                if match:
+                    day, month, year = match.groups()
+                    try:
+                        # Convert 2-digit year to 4-digit (assuming 20xx for years 00-99)
+                        full_year = 2000 + int(year)
+                        file_date = datetime(full_year, int(month), int(day))
+                        
+                        if newest_date is None or file_date > newest_date:
+                            newest_date = file_date
+                            newest_file = exe_file
+
+                        logger.debug(f"Found EinTzofia file with date {day}/{month}/{year}: {filename}")
+                        
+                    except ValueError as e:
+                        logger.warning(f"Invalid date in filename {filename}: {e}")
+                        # If date parsing fails, we'll still consider files without dates
+                        if newest_file is None:
+                            newest_file = exe_file
+                else:
+                    logger.debug(f"No date pattern found in filename: {filename}")
+                    # If no date found and no newest_file yet, use this as fallback
+                    if newest_file is None:
+                        newest_file = exe_file
+            
+            if newest_file is None:
+                # Fallback to first file if no valid file found
+                newest_file = exe_files[0]
+                logger.warning(f"No valid EinTzofia file found with date pattern, using first file: {newest_file}")
+            else:
+                if newest_date:
+                    logger.info(f"Found newest EinTzofia executable with date {newest_date.strftime('%d/%m/%Y')}: {newest_file}")
+                    print(f"DEBUG: Using newest EinTzofia executable with date {newest_date.strftime('%d/%m/%Y')}: {newest_file}")
+                else:
+                    logger.info(f"Found EinTzofia executable (no date in filename): {newest_file}")
+                    print(f"DEBUG: Using EinTzofia executable (no date pattern): {newest_file}")
+                    
+                if len(exe_files) > 1:
+                    other_files = [str(f) for f in exe_files if f != newest_file]
+                    logger.debug(f"Other EinTzofia files found: {other_files}")
+            
+            print(f"DEBUG: Returning EinTzofia executable path: {newest_file}")
+            return str(newest_file)
             
         except Exception as e:
             logger.error(f"Error searching for EinTzofia executable: {e}")

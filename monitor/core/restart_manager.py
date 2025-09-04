@@ -143,14 +143,10 @@ class RestartManager:
             
             # Send restart notification email before restarting
             self.send_restart_notification()
-            
+
             # Execute the actual computer restart using OSManager
             self.logger.info("Executing computer restart...")
-            restart_result = self.os_manager.restart_pc()
-            if restart_result:
-                self.logger.info("Restart command executed successfully")
-            else:
-                self.logger.error("Restart command failed")
+            self.os_manager.restart_pc()
             
         except Exception as e:
             self.logger.error(f"Failed to execute restart: {e}")
@@ -205,7 +201,8 @@ class RestartManager:
         if self.email_service:
             try:
                 self.logger.info("Sending restart notification email")
-                self.email_service.send_restart_notification()
+                threads = self.device_status_manager.get_threads_status()
+                self.email_service.send_restart_notification(threads=threads, send_threads_info=True)
             except Exception as email_error:
                 self.logger.error(f"Failed to send restart notification email: {email_error}")
                 # Continue with restart even if email fails

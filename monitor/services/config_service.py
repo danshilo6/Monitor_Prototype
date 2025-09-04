@@ -61,19 +61,19 @@ class ConfigService:
                 "server_choice": "5001"
             },
             "versions": {
-                "monitor_version": "27-08-2025",
-                "ein_tzofia_version": "12-07-25"
+                "monitor_version": "02-09-25",
+                "ein_tzofia_version": ""
             },
             "system": {
-                "enable_restart": False,
+                "enable_restart": True,
                 "minutes_to_restart": "5",
                 "restart_cooldown_minutes": "10",
                 "startup_snooze_time": "5",
-                "check_eintzofia_running": False,
-                "enable_eintzofia_auto_reopen": False,
+                "check_eintzofia_running": True,
+                "enable_eintzofia_auto_reopen": True,
                 "decision_cycle_seconds": "180",
-                "enable_device_failure_emails": False,
-                "enable_restart_emails": False
+                "enable_device_failure_emails": True,
+                "enable_restart_emails": True
             },
             "devices": {
                 "relay_fail_threshold": "30",

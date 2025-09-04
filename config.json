@@ -1,12 +1,13 @@
 {
   "general": {
-    "location_name": "email testing",
-    "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_12_07_25.exe",
-    "server_choice": "5001"
+    "location_name": "Dan's PC",
+    "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_27_08_25.exe",
+    "server_choice": "local",
+    "location_extracted_from_old_settings": true
   },
   "versions": {
-    "monitor_version": "12-07-25",
-    "ein_tzofia_version": "12-07-25"
+    "monitor_version": "1.0.1",
+    "eintzofia_version": "27_08_25"
   },
   "system": {
     "enable_restart": false,
@@ -26,6 +27,10 @@
     "history_length": "50"
   },
   "device": {
-    "signed_id": "66c3a871da9814cb13807fe3697754ac1a29537122032eebb8660429a78a495ee603230d42640d8240184390b025a49ac0b45fb766195a6b0eac14a98329c5866361f664c0ab32d51bd90743b51b32c6302895eb743ca884ad6ff936b41e54f6429eb32b451ccca682a46565f03c716159201286abb79175f510684d4903c867f2b661d2dad429b4e0192caee4be5424fa382fafe2749fa4a63da35ed6a62dd276b76ae390122bd45ab6e8f5e3029a6208e8a4ea0ef9d89756c143c51986af697c765615d107eafab2f2dc91353964b1c76ba323c825caf49d6c5aaae53c41a81b8836c8ae0659371f980ee637d9f56a7d61cf0ea933a6581122d24c6b39d352"
+    "signed_id": "9b649db6c163af582b7c747a46ca217451af9618873fa52b0babf0b965bf9aa7c10d576df257dbb456dba8e31b4dbba15b8b9ecbb263aeb5ab31eec12b07fc90374db25e1b7dac0bb2bc09f953b5080b5504c6ac9fa9f6f116e1bd71282725bfde5bf595cebcb8adc5352ed03324d6afa3c4a30a12e042e62de47ed4c6095cbfd7873de676b52a9ac7c524b26845179a8b4580ffd696cdd4e462c379edd2e97ce264b4cf78d68d8f947ffd273b4115f0c9239355da17e46b992ec67cdeceac88f6063ab37f1746de780d16f335a3a1ba538e861efe7c35de7a2f059c93d62ae262e191963d6be761e0cd4782a85b6b4e6d27661158217fc095e5100ea8c4046f",
+    "location": "Dan's PC"
+  },
+  "notifications": {
+    "phone_number": ""
   }
 }

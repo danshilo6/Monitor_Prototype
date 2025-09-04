@@ -117,7 +117,6 @@ class DecisionEngine(QObject):
         # Initialize email service
         self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
         
-        
         test = False
         if test:
             print("\n\n\n TEST")
@@ -369,7 +368,7 @@ class DecisionEngine(QObject):
             for device_id, device_info in devices.items():
                 self._ensure_device_tracked(device_info) # Adds the device to the json file
                 self._evaluate_and_process_device(device_info)
-            
+
         except Exception as e:
             self.logger.error(f"Error evaluating devices: {e}")
     
@@ -493,9 +492,10 @@ class DecisionEngine(QObject):
                 description=description,
                 timestamp=datetime.now()
             )
-            
-            # Emit signal instead of directly calling database
-            self.alert_creation_requested.emit(alert)
+
+            # Emit signal instead of directly calling database - don't send alerts for THREAD devices
+            if not device.device_type == DeviceType.THREAD.value:
+                self.alert_creation_requested.emit(alert)
             self.logger.info(f"Requested failure alert creation for device {device_id}: {alert_id}")
                 
         except Exception as e:

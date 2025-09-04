@@ -307,6 +307,11 @@ class LogProcessor:
                     self.logger.warning(f"Skipping log entry with missing device_id or status: {log_entry}")
                     continue
                 
+                if device_type == DeviceType.THREAD.value and log_status == "fail":
+                    self.logger.info(f"Ignoring failed thread log: {device_id}")
+                    print(f"Ignoring failed thread log: {device_id}")
+                    continue
+
                 # Get or create device info
                 if device_id in devices_in_memory:
                     device_info = devices_in_memory[device_id]
