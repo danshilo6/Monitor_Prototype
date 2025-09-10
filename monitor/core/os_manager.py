@@ -5,7 +5,7 @@ from pathlib import Path
 from monitor.log_setup import get_logger
 
 # Import the legacy os_manager class via package so PyInstaller can discover it
-from legacy_code import os_manager as LegacyOSManager
+from monitor.legacy_code import os_manager as LegacyOSManager
 
 
 class MockParent:
@@ -215,6 +215,10 @@ class OSManager:
     def get_temp_dir_path(self):
         """Get temp directory path using legacy implementation."""
         return self.legacy_os.get_temp_dir_path()
+
+    def get_data_dir_path(self):
+        """Get data directory path using legacy implementation."""
+        return self.legacy_os.get_data_dir_path()
     
     def get_monitor_dir_path(self):
         """Get monitor directory path using legacy implementation."""

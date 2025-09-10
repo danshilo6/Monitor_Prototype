@@ -15,7 +15,8 @@ import zipfile
 import tempfile
 # import time
 import sys
-
+from pathlib import Path
+#from monitor.utils.path_utils import get_app_root
 if sys.platform.startswith("Windows"):
     from win32com.client import Dispatch
 
@@ -618,6 +619,12 @@ class os_manager:
         temp_dir_path = os.path.join(EinTzofia_dir_path, '_internal')
         temp_dir_path = os.path.join(temp_dir_path, 'temp')
         return temp_dir_path
+    
+    def get_data_dir_path(self):
+        EinTzofia_dir_path = os.path.dirname(self.parent.settings['File_Path'])
+        data_dir_path = os.path.join(EinTzofia_dir_path, '_internal')
+        data_dir_path = os.path.join(data_dir_path, 'data')
+        return data_dir_path
 
     def _get_deterministic_system_id(self):
         """
@@ -666,6 +673,7 @@ class os_manager:
             return fallback_id
 
     def get_monitor_dir_path(self):
+        '''
         # Check if we're running as a frozen bundle or as a script
         if getattr(sys, 'frozen', False):
             # If frozen (executable), get the directory of the executable
@@ -677,7 +685,14 @@ class os_manager:
         
         # Convert to absolute path
         print("DEBUG Monitor dir path:", base_dir)
-        return base_dir
+        return base_dir'''
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            return Path(sys.executable).parent
+        else:
+            # Development mode - return project root
+            # This file is in monitor/utils/, so go up 2 levels to get project root
+            return Path(__file__).parent.parent.parent
 
     def zip_folder(self, folder_path):
         """

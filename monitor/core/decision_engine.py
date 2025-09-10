@@ -301,7 +301,16 @@ class DecisionEngine(QObject):
 
         # Step 3: Send pulse to server
         try:
-            self._pulse_to_server()
+            _, download_files, _ = self.server_manager.pulse_to_server()
+            print(f"Download files: {download_files}")
+            updates_pending = self.server_manager.check_for_updates(download_files)
+            if updates_pending:
+                updated = self.server_manager.handle_download_files(download_files)
+                if updated:
+                    self.logger.info("Updates applied - setting restart flag in config")
+                    print("Updates applied - setting restart flag in config...")
+                    # Set restart flag in config for restart manager to pick up
+                    self.config_service.set("system", "pending_restart_after_update", True)
             self.logger.debug("Server pulse completed")
         except Exception as e:
             self.logger.error(f"Server pulse error: {e}")
@@ -321,6 +330,7 @@ class DecisionEngine(QObject):
         self.logger.debug(f"Cycle completed at: {current_time}")
         print(f"Cycle completed at: {current_time}\n")
     
+
     def _check_and_start_eintzofia(self) -> None:
         """Check if Ein Tzofia is running and start it if needed (when enabled)."""
         # Check config service directly for real-time setting
@@ -443,6 +453,7 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.error(f"Error checking restart conditions: {e}")
     
+    # TODO: Delete this
     def _pulse_to_server(self) -> None:
         """Send pulse to server at the end of monitoring cycle."""
         try:

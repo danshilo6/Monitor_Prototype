@@ -75,12 +75,14 @@ class RestartManager:
             device_statuses = self.device_status_manager.get_device_statuses()
             restart_info = self.device_status_manager.get_restart_info()
             
+            
+
             # Get restart evaluator with current config values
             restart_evaluator = self._get_restart_evaluator()
             
-            # Check basic restart conditions first
+            # Check restart conditions (including update flag)
             if not restart_evaluator.should_restart(
-                device_statuses, restart_info, engine_start_time
+                device_statuses, restart_info, engine_start_time, self.config_service
             ):
                 # Check if there are failed thread devices for logging
                 failed_device = restart_evaluator._find_failed_thread_device(device_statuses)
@@ -89,6 +91,12 @@ class RestartManager:
                     reason = f"Thread device failure detected but not restarting - engine runtime: {engine_runtime}"
                     return False, reason
                 return False, "No restart conditions met"
+            
+            # Check if restart is due to updates
+            update_restart_pending = self.config_service.get("system", "pending_restart_after_update", False)
+            if update_restart_pending:
+                reason = "Updates applied - restart required"
+                return True, reason
             
             # If basic conditions are met, check Ein Tzofia running condition if enabled
             check_eintzofia_running_enabled = self.config_service.get("system", "check_eintzofia_running", self.DEFAULT_CHECK_EINTZOFIA_RUNNING)
@@ -112,16 +120,21 @@ class RestartManager:
         Execute computer restart and update restart info.
         """
         try:
+            # Clear the update restart flag before restarting
+            update_restart_pending = self.config_service.get("system", "pending_restart_after_update", False)
+            if update_restart_pending:
+                self.config_service.set("system", "pending_restart_after_update", False)
+                self.logger.info("Cleared pending restart flag after updates")
+
             # Check if restart is enabled in config before proceeding
             restart_enabled = self.config_service.get("system", "enable_restart", True)
             if not restart_enabled:
                 self.logger.info("Restart requested but disabled in config - skipping restart")
-                self.send_restart_notification()
-                print("restart email notification sent for debugging purposes")
                 return
             
-            self.logger.info("RESTARTING COMPUTER due to thread device failure")
-            print("RESTARTING COMPUTER due to thread device failure")  # TODO: Remove this print later
+            restart_reason = "updates applied" if update_restart_pending else "thread device failure"
+            self.logger.info(f"RESTARTING COMPUTER due to {restart_reason}")
+            print(f"RESTARTING COMPUTER due to {restart_reason}")
             
             # Get current restart info
             restart_info = self.device_status_manager.get_restart_info()

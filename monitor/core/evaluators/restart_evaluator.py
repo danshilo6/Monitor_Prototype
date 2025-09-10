@@ -35,7 +35,8 @@ class RestartEvaluator:
     
     def should_restart(self, device_statuses: Dict[str, Dict[str, Any]], 
                       restart_info: Dict[str, Any], 
-                      engine_start_time: Optional[datetime]) -> bool:
+                      engine_start_time: Optional[datetime],
+                      config_service = None) -> bool:
         """
         Determine if the computer should be restarted.
         
@@ -43,11 +44,16 @@ class RestartEvaluator:
             device_statuses: Dictionary of device statuses from persistent storage
             restart_info: Dictionary containing restart history information
             engine_start_time: When the decision engine started
+            config_service: Config service to check for update restart flag
             
         Returns:
             True if restart should occur, False otherwise
         """
 
+        # First check if restart is requested due to updates
+        if config_service and config_service.get("system", "pending_restart_after_update", False):
+            self.logger.info("Restart requested due to pending updates")
+            return True
 
         # Check if any thread devices are in fail status
         failed_thread_device = self._find_failed_thread_device(device_statuses)

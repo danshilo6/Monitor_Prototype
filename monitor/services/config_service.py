@@ -58,10 +58,10 @@ class ConfigService:
             "general": {
                 "location_name": "",
                 "eintzofia_path": "",
-                "server_choice": "5001"
+                "server_url": "http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001"
             },
             "versions": {
-                "monitor_version": "02-09-25",
+                "monitor_version": "08-09-25",
                 "ein_tzofia_version": ""
             },
             "system": {
@@ -77,7 +77,7 @@ class ConfigService:
             },
             "devices": {
                 "relay_fail_threshold": "30",
-                "camera_fail_threshold": "0.1",
+                "camera_fail_threshold": "0.2",
                 "camera_log_minutes": "20",
                 "history_length": "50"
             },

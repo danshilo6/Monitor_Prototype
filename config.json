@@ -2,7 +2,7 @@
   "general": {
     "location_name": "Dan's PC",
     "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_27_08_25.exe",
-    "server_choice": "local",
+    "server_url": "http://127.0.0.1:5001",
     "location_extracted_from_old_settings": true
   },
   "versions": {
@@ -16,9 +16,10 @@
     "startup_snooze_time": "1",
     "check_eintzofia_running": false,
     "enable_eintzofia_auto_reopen": false,
-    "decision_cycle_seconds": "10",
-    "enable_device_failure_emails": true,
-    "enable_restart_emails": true
+    "decision_cycle_seconds": "5",
+    "enable_device_failure_emails": false,
+    "enable_restart_emails": false,
+    "pending_restart_after_update": false
   },
   "devices": {
     "relay_fail_threshold": "30",
@@ -27,7 +28,7 @@
     "history_length": "50"
   },
   "device": {
-    "signed_id": "9b649db6c163af582b7c747a46ca217451af9618873fa52b0babf0b965bf9aa7c10d576df257dbb456dba8e31b4dbba15b8b9ecbb263aeb5ab31eec12b07fc90374db25e1b7dac0bb2bc09f953b5080b5504c6ac9fa9f6f116e1bd71282725bfde5bf595cebcb8adc5352ed03324d6afa3c4a30a12e042e62de47ed4c6095cbfd7873de676b52a9ac7c524b26845179a8b4580ffd696cdd4e462c379edd2e97ce264b4cf78d68d8f947ffd273b4115f0c9239355da17e46b992ec67cdeceac88f6063ab37f1746de780d16f335a3a1ba538e861efe7c35de7a2f059c93d62ae262e191963d6be761e0cd4782a85b6b4e6d27661158217fc095e5100ea8c4046f",
+    "signed_id": "8f624a6f782b2f9febb3b9b845e42fad4982cc6dc768b018f12d6b3f4c9c26ea7a358388e41be661c3b8616331d2da38757982888c5f0e974d0989251764ca6a59008574597ad4ef84c4b9db9d784ed271441cde95265b3ba03b4dbf5d9cbe5ecfb42dc961683af624e60b76e2a625d3c177f3ae48db46b9e15c5cbfaf95dbe69af9f2851708fabb87827937c04b131aedc6cad9d4259ebda00c324a5d62a92cccccf1a8ea893769bba50ec640a1b60dc7fea6eeb15fbb905d51f0dc3aa1d9f49a976f78ed572bfc39d150db40542044ec770d1509310f0b2029b175d957da8c520efa7c25e426beef64c66d729e615b1a382dd104eb0519c13fb4a6ca442fd5",
     "location": "Dan's PC"
   },
   "notifications": {

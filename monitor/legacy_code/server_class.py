@@ -8,6 +8,18 @@ import pandas as pd
 import shutil
 import pickle
 from datetime import datetime
+import sys
+import ctypes
+from ctypes import c_char_p, c_size_t, c_void_p, POINTER, c_ubyte, c_bool
+import platform
+import re
+from datetime import datetime
+import uuid
+import hashlib
+import subprocess
+import psutil
+import base64
+
 try:
     from .os_class import os_manager  # package relative (frozen & normal)
 except ImportError:
@@ -20,11 +32,11 @@ class ServerManager:
         self.os_manager = os_manager
         #check if ran as unfrozen code
         #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
-        #    self.base_url = 'http://127.0.0.1:5000'
+        self.base_url = 'http://127.0.0.1:5001'
         #else:
         #    self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
-        
-        self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
+
+        #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
 
     
     def upload_configuration(self):
@@ -64,6 +76,8 @@ class ServerManager:
         # initialize download flags
         eintzofia_download = False
         monitor_download = False
+        model_download = False
+        model_password = ''
 
         server_url = f"{self.base_url}/pulse"
         # fetch location and device_id
@@ -72,7 +86,7 @@ class ServerManager:
         print(f'Pulsing to server {self.base_url} for PC ID: {device_id}')
         
         try:
-            response = requests.post(server_url, json={'location': location,'password':password,'device_id':device_id,'return_ID':return_ID,'version':self.parent.VERSION})
+            response = requests.post(server_url, json={'location':location,'password':password,'device_id':device_id,'return_ID':return_ID,'version':self.parent.VERSION}, timeout=30)
             data = response.json()
             if response.status_code == 200:
                 print(f'Pulse sent successfully for {location}')
@@ -84,6 +98,10 @@ class ServerManager:
                         eintzofia_download = True
                     if download_files['monitor'] == "True" or download_files['monitor'] == True:
                         monitor_download = True
+                    if download_files['model'] == "True" or download_files['model'] == True:
+                        model_download = True
+                    if download_files['model_password']:
+                        model_password = download_files['model_password']
                 else:
                     if download_files == "True" or download_files == True:
                         monitor_download = True
@@ -91,7 +109,9 @@ class ServerManager:
                 trasnformed_ID = data['transformed_ID']#.fromhex().decode('utf-8')
                 download_files = {
                     'eintzofia':eintzofia_download,
-                    'monitor':monitor_download
+                    'monitor': monitor_download,
+                    'model': model_download,
+                    'model_password': model_password
                 }
         
                 return correct_password,download_files,trasnformed_ID
@@ -142,11 +162,11 @@ class ServerManager:
         else:
             print(f'Error downloading folder: {response.json()["message"]}')
 
-    def set_download_files(self,locations,eintzofia_download = False,monitor_download = False):
+    def set_download_files(self,locations,eintzofia_download = False,monitor_download = False,model_download=False):
         url = f"{self.base_url}/set_download_files"
-        payload = {"locations": locations,"eintzofia_download":eintzofia_download,"monitor_download":monitor_download}
+        payload = {"locations": locations,"eintzofia_download":eintzofia_download,"monitor_download":monitor_download, "model_download":model_download}
         try:
-            response = requests.post(url, json=payload)
+            response = requests.post(url, json=payload, timeout=30)
             if response.status_code == 200:
                 result = response.json()
                 print(f"Successfully updated {result['updated_count']} rows")
@@ -167,7 +187,7 @@ class ServerManager:
         
         try:
             # Send a POST request to the server
-            response = requests.post(url, json=payload)
+            response = requests.post(url, json=payload, timeout=30)
             
             # Check if the request was successful (status code 200)
             if response.status_code == 200:
@@ -231,7 +251,7 @@ class ServerManager:
 
 
             try:
-                response = requests.post(url, json=payload)
+                response = requests.post(url, json=payload, timeout=30)
                 print(f"Respone status: {response.status_code}")
                 print(f"Respone text: {response.text}")
                 if response.status_code == 200:
@@ -249,9 +269,11 @@ class ServerManager:
         save_path = self.parent.osManager.get_monitor_dir_path()
         # Construct the URL to request the monitor file from the server
         url = f"{self.base_url}/send_monitor_file"
+        download_timeout = aiohttp.ClientTimeout(total=3600, connect=30)  # 1 hour total timeout
+
         try:
             # Create an asynchronous HTTP session
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=download_timeout) as session:
                 print("Monitor download started")
                 # Send a POST request to the server to download the monitor file
                 async with session.post(url) as response:
@@ -295,7 +317,7 @@ class ServerManager:
                                 
                                 # Restart the PC to apply changes
                                 print("All operations completed successfully. Restarting PC...")
-                                self.parent.osManager.restart_pc()
+                                #self.parent.osManager.restart_pc()
                                 return True
                         
                         # Delete the zip file after extraction to clean up
@@ -321,9 +343,10 @@ class ServerManager:
         save_path = os.path.dirname(save_path)
 
         url = f"{self.base_url}/download_exefiles"
-        
+        download_timeout = aiohttp.ClientTimeout(total=3600, connect=30)  # 1 hour total 
+
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=download_timeout) as session:
                 print("EinTzofia download started")
                 async with session.get(url) as response:
                     if response.status == 200:
@@ -345,15 +368,18 @@ class ServerManager:
                         self.parent.osManager.delete_file(zip_path)
                         
                         # Restart the PC to apply changes
-                        self.parent.osManager.restart_pc()
+                        #   self.parent.osManager.restart_pc()
+                        return True
                         
                     else:
                         print(f"Download failed. Status code: {response.status}")
                         print(f"Response text: {await response.text()}")
+                        return False
         except Exception as e:
             print(f"Error during download and extraction: {str(e)}")
             print("Traceback:")
             print(traceback.format_exc())
+            return False
 
     def send_SMS(self,message):
 
@@ -601,7 +627,7 @@ class ServerManager:
             traceback.print_exc()
             return None
 
-    def download_encrypted_model(self, device_id,password):
+    async def download_encrypted_model(self, device_id,password):
         print(f"DEBUG: Downloading encrypted model for device {device_id}")
         try:
             url = f"{self.base_url}/send_encrypted_model"
@@ -610,47 +636,45 @@ class ServerManager:
                 'password': password
             }
             response = requests.post(url, json=payload)
-            data = response.json()
+            data = response.json(timeout=3600, connect=30)  # 1 hour total timeout
             if data['status'] == 'success':
                 # get the zipped files and save them to current dir
                 current_dir = os.path.dirname(os.path.abspath(__file__))
                 zip_path = os.path.join(current_dir, 'encrypted_model.zip')
                 
-                # Decode base64 string back to bytes
-                import os
-                import sys
-                import ctypes
-                from ctypes import c_char_p, c_size_t, c_void_p, POINTER, c_ubyte, c_bool
-                import platform
-                import re
-                from datetime import datetime
-                import uuid
-                import hashlib
-                import shutil
-                import subprocess
-                import psutil
-                import zipfile
-                import tempfile
-                # import time
-                import sys
+                # Decode base64 string back to bytes                
+                zip_content_bytes = base64.b64decode(data['encrypted_model'])
+                
+                # save the zipped files to current dir
+                with open(zip_path, 'wb') as f:
+                    f.write(zip_content_bytes)
+                print(f"DEBUG: Encrypted model saved successfully to: {zip_path}")
+                
+                save_path = self.parent.osManager.get_data_dir_path()
 
-                # Ensure relative import works inside packaged application
-                try:
-                    from .os_class import os_manager  # type: ignore
-                except Exception:  # fallback when run as script directly
-                    from os_class import os_manager  # type: ignore
+                # extract the zipped files to current dir
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(save_path)
+                print(f"DEBUG: Extracted encrypted model to: {save_path}")
+
+                # delete the zipped file
+                os.remove(zip_path)
+                return True
+
             else:
                 print(f"DEBUG: Failed to download encrypted model. Status code: {response.status_code}")
                 print(f"DEBUG: Response: {response.text}")
-                return None
+                return False
         
         except Exception as e:
             print(f"DEBUG: Exception in download_encrypted_model: {e}")
             traceback.print_exc()
-            return None
+            return False
 
 if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
 
-    server.download_encrypted_model(device_id=OS_manager.generate_device_id(),password='M0mTyaNwsQ6Lqr8l')
+    server.set_download_files(locations=["Dan's PC"], eintzofia_download=True,monitor_download=True, model_download=True)
+
+    #server.download_encrypted_model(device_id=OS_manager.generate_device_id(),#password='M0mTyaNwsQ6Lqr8l')

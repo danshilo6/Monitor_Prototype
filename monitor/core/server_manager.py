@@ -1,8 +1,9 @@
+import asyncio
 from pathlib import Path
 from monitor.log_setup import get_logger
 
 # Import legacy ServerManager via package so PyInstaller discovers it
-from legacy_code.server_class import ServerManager as LegacyServerManager
+from monitor.legacy_code.server_class import ServerManager as LegacyServerManager
 
 
 class MockParentForServer:
@@ -61,12 +62,13 @@ class MockParentForServer:
         """Persist current settings to file."""
         try:
             if self.config_service:
+                pass
                 # Update config with current settings
-                self.config_service.set("device", "location", self.settings['Location'])
-                self.config_service.set("general", "eintzofia_path", self.settings['File_Path'])
-                self.config_service.set("notifications", "phone_number", self.settings['Phone_Number'])
-                self.config_service.save()
-                self.logger.info("Settings saved successfully")
+                # self.config_service.set("device", "location", self.settings['Location'])
+                # self.config_service.set("general", "eintzofia_path", self.settings['File_Path'])
+                # self.config_service.set("notifications", "phone_number", self.settings['Phone_Number'])
+                # self.config_service.save()
+                # self.logger.info("Settings saved successfully")
         except Exception as e:
             self.logger.error(f"Failed to save settings: {e}")
 
@@ -95,18 +97,16 @@ class ServerManager:
         
         self.logger.info("ServerManager initialized")
     
-    def choose_server(self, server_choice):
-        if server_choice == "5000":
-            self.update_server_url('http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000')
-        elif server_choice == '5001':
-            self.update_server_url('http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5001')
-        else:
-            # set to local
-            self.update_server_url('http://127.0.0.1:5001')
-
     def update_server_url(self, url):
+        """
+        Update the server URL directly.
+        
+        Args:
+            url: Full server URL (e.g., 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000')
+        """
         self.legacy_server.base_url = url
         print(f"Connecting to server: {url}")
+        self.logger.info(f"Server URL updated to: {url}")
 
     def update_location_name(self, name):
         self.legacy_server.parent.settings['Location'] = name
@@ -118,14 +118,15 @@ class ServerManager:
     def pulse_to_server(self, password='', return_id=False):
         """Send pulse to server using legacy implementation."""
         #print("ServerManager: Sending pulse to server...")
-        self.logger.info("Sending pulse to server")
+        self.logger.info("Sending pulse to server ")
+        print(f"SERVER_MANAGER: Sending pulse to server {self.config_service.get('general', 'server_url','')}")
         try:
             result = self.legacy_server.pulse_to_server(password, return_id)
-            #print(f"ServerManager: Pulse completed with result: {result}")
+            print(f"SERVER_MANAGER: Pulse completed with result: {result}")
             self.logger.info(f"Pulse to server completed: {result}")
             return result
         except Exception as e:
-            #print(f"ServerManager: Pulse failed with error: {e}")
+            print(f"SERVER_MANAGER: Pulse failed with error: {e}")
             self.logger.error(f"Failed to send pulse to server: {e}")
             return "Fail", "Fail", False
     
@@ -198,7 +199,81 @@ class ServerManager:
             return self.legacy_server.disable_alerts(device_id, password)
         except Exception as e:
             self.logger.error(f"Failed to disable alerts: {e}")
-    
+
+    def check_for_updates(self, download_files: dict) -> bool:
+        """Check if there are updates pending by the server."""
+        if not download_files:
+            return False
+        
+        updates_pending = False
+        if isinstance(download_files, dict):
+            for key in download_files.keys():
+                if download_files[key] == True or download_files[key] == "True":
+                    updates_pending = True
+                    print(f"Update pending for: {key}")
+                    self.logger.info(f"Update pending for: {key}")
+        return updates_pending  
+
+    def handle_download_files(self, download_files: dict) -> None:
+        """ check if need to download monitor, eintzofia or model """
+        if not download_files:
+                self.logger.info("No download files specified")
+                return False
+        
+        update = False
+
+        # Download eintzofia files
+        if download_files.get('eintzofia', False):
+            try:
+                print("Downloading EinTzofia files...")
+                success = asyncio.run(self.download_exefiles(delete_old_file=True))
+                if success:
+                    print("EinTzofia files downloaded successfully")
+                    self.logger.info("EinTzofia files downloaded successfully")
+                    update = True
+                else:
+                    self.logger.warning("EinTzofia files download failed")
+            except Exception as e:
+                self.logger.error(f"Error downloading EinTzofia files: {e}")
+
+        # Download monitor files
+        if download_files.get('monitor', False):
+            try:
+                print("Downloading monitor files...")
+                success = asyncio.run(self.download_monitor_files())
+                if success:
+                    print("Monitor files downloaded successfully")
+                    self.logger.info("Monitor files downloaded successfully")
+                    update = True
+                else:
+                    self.logger.warning("Monitor files download failed")
+            except Exception as e:
+                self.logger.error(f"Error downloading monitor files: {e}")
+        
+        # Download model files
+        if download_files.get('model', False):
+            try:
+                # get device id and password from somewhere
+                device_id = self.os_manager.generate_device_id()
+                model_password = download_files.get('model_password', '')
+                if not model_password:
+                    self.logger.warning("No model password provided for model download")
+                    print("No model password provided for model download")
+                    return False
+
+                print("Downloading encrypted model...")
+                success = asyncio.run(self.download_encrypted_model(device_id, model_password))
+                if success:
+                    self.logger.info("Encrypted model downloaded successfully")
+                    print("Encrypted model downloaded successfully")
+                    update = True
+                else:
+                    self.logger.warning("Encrypted model download failed")
+            except Exception as e:
+                self.logger.error(f"Error downloading encrypted model: {e}")
+
+        return update
+
     # Download methods
     async def download_monitor_files(self):
         """Download monitor files using legacy implementation."""

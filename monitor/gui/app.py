@@ -740,9 +740,9 @@ def main() -> int:
         
         # ---------------------- AUTHENTICATION BEFORE MAIN WINDOW ----------------------
         
-        # choose server
-        server_choice = config_service.get("general", "server_choice", "5000")   
-        server_manager.choose_server(server_choice)
+        # Set server URL directly from config
+        server_url = config_service.get("general", "server_url", "http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000")   
+        server_manager.update_server_url(server_url)
         print(f"Chosen server: {server_manager.legacy_server.base_url}")
         # connect to server
         if need_auto_update: # TODO REMOVE THIS PART (LEAVE ONLY THE ELSE PART) -- migration from old version
