@@ -551,89 +551,72 @@ def authenticate_with_server_auto(config_service: ConfigService, server_manager:
 
 def authenticate_with_server(config_service: ConfigService, server_manager: ServerManager, parent=None) -> bool:
     """
-    Show authentication dialog and handle server authentication before main window loads.
-    Returns True if authentication succeeds or local monitoring is allowed, False if cancelled.
+    Authenticate with server using hardcoded password and config location.
+    Returns True if authentication succeeds, False otherwise.
     
     Args:
         config_service: Configuration service instance
         server_manager: Server manager instance
-        parent: Parent widget for dialogs (optional)
+        parent: Parent widget for dialogs (optional, unused)
         
     Returns:
         bool: True if authenticated and monitoring should start, False otherwise
     """
     logger = get_logger("monitor.gui.app")
     
-    while True:
-        try:
-            # Check if device ID exists and is approved on server
-            id_exists, id_approved = server_manager.check_id_exists_and_approved()
-            logger.info(f"Server check - ID exists: {id_exists}, ID approved: {id_approved}")
-            
-            id = config_service.get("device", "signed_id", "")
-            print(f"\nSIGNED_ID: {id}\n")
-            if not id:
-                id = ""
-            
-            # If already approved, proceed with monitoring
-            if id_approved and id_exists and id != "":
-                logger.info("Device already approved - authentication successful")
-                return True
+    try:
+        # Check if device ID exists and is approved on server
+        id_exists, id_approved = server_manager.check_id_exists_and_approved()
+        logger.info(f"Server check - ID exists: {id_exists}, ID approved: {id_approved}")
+        
+        id = config_service.get("device", "signed_id", "")
+        print(f"\nSIGNED_ID: {id}\n")
+        if not id:
+            id = ""
+        
+        # If already approved, proceed with monitoring
+        if id_approved and id_exists and id != "":
+            logger.info("Device already approved - authentication successful")
+            return True
 
-            # Show authentication dialog with styling
-            current_location = config_service.get("general", "location_name", "")
-            dialog = AuthDialog(current_location, parent)
-            
-            # Apply styling to the dialog
-            style_manager = StyleManager()
-            try:
-                auth_style = style_manager.load_style("auth_dialog")
-                dialog.setStyleSheet(auth_style)
-            except FileNotFoundError:
-                logger.warning("Auth dialog stylesheet not found, using default styling")
-            
-            if dialog.exec() == QDialog.Accepted:
-                password = dialog.get_password()
-                location_name = dialog.get_location_name()
-                
-                # Save location name to config if provided
-                if location_name:
-                    config_service.set("general", "location_name", location_name)
-                    logger.info(f"Location name saved to configuration: {location_name}")
-                    server_manager.update_location_name(location_name)
+        # Get location name from config, default to "unknown" if empty
+        location_name = config_service.get("general", "location_name", "")
+        if not location_name:
+            location_name = "unknown"
+        print(f"LOCATION NAME: {location_name}\n")
 
-                if not password:  # Empty password - allow local monitoring
-                    logger.info("Empty password provided - proceeding with local monitoring only")
-                    return True
-                
-                # Attempt authentication with server
-                logger.info("Attempting server authentication")
-                is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
-                    password, 
-                    return_id=True
-                )
-                
-                if is_password_correct:
-                    logger.info("Authentication successful")
-                    
-                    # Save the signed ID to config
-                    if signed_id:
-                        config_service.set("device", "signed_id", signed_id)
-                        logger.info("Signed ID saved to configuration")
-                    
-                    return True
-                else:
-                    logger.warning("Authentication failed - incorrect password")
-                    QMessageBox.warning(parent, "Authentication Error", "Incorrect password. Please try again.")
-                    # Loop continues to ask for password again
-            else:
-                logger.info("User cancelled authentication")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error during server authentication: {e}")
-            QMessageBox.warning(parent, "Authentication Error", f"Server communication error: {str(e)}")
+        # Use hardcoded password
+        password = "Bulltech2023"
+        
+        logger.info(f"Auto-authenticating with location: '{location_name}'")
+        
+        # Update server manager with location name
+        server_manager.update_location_name(location_name)
+        logger.info(f"Location name updated in server manager: {location_name}")
+
+        # Attempt authentication with server
+        logger.info("Attempting automated server authentication")
+        is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
+            password, 
+            return_id=True
+        )
+        
+        if is_password_correct:
+            logger.info("Automated authentication successful")
+            
+            # Save the signed ID to config
+            if signed_id:
+                config_service.set("device", "signed_id", signed_id)
+                logger.info("Signed ID saved to configuration")
+            
+            return True
+        else:
+            logger.error("Automated authentication failed - incorrect password")
             return False
+                
+    except Exception as e:
+        logger.error(f"Error during automated server authentication: {e}")
+        return False
 
 
 def _show_auth_error(parent_window, message: str):
