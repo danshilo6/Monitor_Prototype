@@ -28,7 +28,7 @@ from monitor.log_setup import get_logger
 from monitor.core.log_processor import LogProcessor
 from monitor.services.devices_db import DevicesDatabase
 from monitor.services.contact_db import ContactDatabase
-from monitor.services.email_service import EmailService
+from monitor.services.notification_service import NotificationService
 from monitor.services.config_service import ConfigService
 from monitor.services.devices_models import DeviceInfo, DeviceType
 from monitor.services.alert_models import Alert, AlertType
@@ -114,8 +114,8 @@ class DecisionEngine(QObject):
         self.devices_db = DevicesDatabase(data_directory / "devices.db")
         self.contact_db = ContactDatabase(data_directory / "contacts.db")
         
-        # Initialize email service
-        self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
+        # Initialize notification service
+        self.email_service = NotificationService(self.contact_db, self.server_manager, self.config_service)
         
         test = False
         if test:

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication
 from monitor.core.decision_engine import DecisionEngine
 from monitor.services.alert_db import AlertDatabase
 from monitor.services.contact_db import ContactDatabase
-from monitor.services.email_service import EmailService
+from monitor.services.notification_service import NotificationService
 from monitor.services.config_service import ConfigService
 from monitor.log_setup import get_logger
 
@@ -61,8 +61,8 @@ class ThreadManager(QObject):
         self.server_manager = server_manager
         self.cycle_interval = cycle_interval
         
-        # Create email service with server manager and config service
-        self.email_service = EmailService(self.contact_db, self.server_manager, self.config_service)
+        # Create notification service with server manager and config service
+        self.email_service = NotificationService(self.contact_db, self.server_manager, self.config_service)
         
         # Thread objects
         self.decision_engine_thread: Optional[QThread] = None
@@ -226,13 +226,13 @@ class ThreadManager(QObject):
                 )
                 self.logger.debug("Connected DecisionEngine -> AlertDatabase signals")
             
-            # Connect DecisionEngine email notification signals to EmailService
+            # Connect DecisionEngine email notification signals to NotificationService
             if self.decision_engine and self.email_service:
                 self.decision_engine.device_failure_notification_requested.connect(
                     self.email_service.send_device_failure_notification
                 )
                 # Note: Device recovery notifications are disabled for now
-                self.logger.debug("Connected DecisionEngine -> EmailService signals (failure notifications only)")
+                self.logger.debug("Connected DecisionEngine -> NotificationService signals (failure notifications only)")
             
             self.logger.info("Component signals connected successfully")
             
@@ -261,13 +261,13 @@ class ThreadManager(QObject):
                 except Exception as e:
                     self.logger.warning(f"Error closing ContactDatabase: {e}")
             
-            # Close EmailService resources
+            # Close NotificationService resources
             if hasattr(self.email_service, 'close') and callable(self.email_service.close):
                 try:
                     self.email_service.close()
-                    self.logger.debug("EmailService resources closed")
+                    self.logger.debug("NotificationService resources closed")
                 except Exception as e:
-                    self.logger.warning(f"Error closing EmailService: {e}")
+                    self.logger.warning(f"Error closing NotificationService: {e}")
             
             # Signal DecisionEngine to close its resources (LogProcessor, etc.)
             if self.decision_engine:

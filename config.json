@@ -1,24 +1,24 @@
 {
   "general": {
-    "location_name": "Dan's PC",
-    "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_27_08_25.exe",
-    "server_url": "http://127.0.0.1:5001",
+    "location_name": "4de3e0e1c7",
+    "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_14_09_25.exe",
+    "server_url": "http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001",
     "location_extracted_from_old_settings": true
   },
   "versions": {
     "monitor_version": "1.0.1",
-    "eintzofia_version": "27_08_25"
+    "eintzofia_version": "14_09_25"
   },
   "system": {
-    "enable_restart": false,
-    "minutes_to_restart": "1",
+    "enable_restart": true,
+    "minutes_to_restart": "5",
     "restart_cooldown_minutes": "2",
-    "startup_snooze_time": "1",
-    "check_eintzofia_running": false,
-    "enable_eintzofia_auto_reopen": false,
-    "decision_cycle_seconds": "5",
-    "enable_device_failure_emails": false,
-    "enable_restart_emails": false,
+    "startup_snooze_time": "5",
+    "check_eintzofia_running": true,
+    "enable_eintzofia_auto_reopen": true,
+    "decision_cycle_seconds": "10",
+    "enable_device_failure_emails": true,
+    "enable_restart_emails": true,
     "pending_restart_after_update": false
   },
   "devices": {
@@ -28,8 +28,7 @@
     "history_length": "50"
   },
   "device": {
-    "signed_id": "21007406bcefe51d4d18773322fb7b0df7cbe4a79b2b277bc4337c24e46d980c436b5b0cdc1a6950f6f1cbc455c6df08cf38ab9b872a0bf57f63b5e14a4f4428246cdc7e75f1cf5fd2e1cbd5ec94a1ddb61a4e0ceae742d740f96c0102cfbe8aefd1ae679360cdf72824314f683f224d4e4d8558064fdf80832ee24dbaba5c5b26666e4bd44b785c5cf8eef5ac26c0e4cd35977738031334f88a999f5289161864ff777f7b2e43667077ff0ac0607ad150e9355e412ed504aae0b5750745ac27e1e998f1fdca7fbc2c51f73f88fceddc0aa987a4cb0eaf33250a545b7602b0d95daa9bf0f2dfd72d74f39fd30a4e185b8f05d579dff580e535f69e63dbf5987a",
-    "location": "Dan's PC"
+    "signed_id": "2a07b5bc258822179bd48581852efc645209ac7014eacf95f6f50fe8f15777fe7a1ffea4fff8d2a89f7dcae439187059311dff26f08a64efafac42826d1f30d79443439ec47daba4adbce14f5cd809f4e743db439d633a10f4b9b8d185e0bf2fc37df41d4f5fe43b86129b35594962cdac00cca0ea625e7d44c46e1738cc0386ffcb5dd85b6f0060acc6c5f0f29561ac1ac04c88f6f7b2ae6a4fbd59b57439a28e8e5c2f60200609a85706890bd25f4cb3182283e434f02dd10eba51fdeae08c46f7553e79c7f02ac2b0b80e62ecf69197161fa121cb73383f6f099b9733f0ade3da5eb5f5a8befaf7cab30cd187bec573a2bdc5aaa66adacd587f40366b53bd"
   },
   "notifications": {
     "phone_number": ""

@@ -12,7 +12,7 @@ from monitor.core.evaluators.restart_evaluator import RestartEvaluator
 from monitor.core.device_status_manager import DeviceStatusManager
 from monitor.services.config_service import ConfigService
 from monitor.core.os_manager import OSManager
-from monitor.services.email_service import EmailService
+from monitor.services.notification_service import NotificationService
 
 
 class RestartManager:
@@ -27,7 +27,7 @@ class RestartManager:
     """
     
     def __init__(self, device_status_manager: DeviceStatusManager,
-                 config_service: ConfigService, os_manager: OSManager, email_service: EmailService = None):
+                 config_service: ConfigService, os_manager: OSManager, email_service: NotificationService = None):
         """
         Initialize the restart manager.
         
@@ -35,7 +35,7 @@ class RestartManager:
             device_status_manager: Manager for device status persistence
             config_service: Configuration service for checking restart settings
             os_manager: OS manager for executing system operations like restart
-            email_service: Email service for sending restart notifications (optional)
+            email_service: Notification service for sending restart notifications (optional)
         """
         self.logger = get_logger("monitor.core.restart_manager")
         
@@ -76,7 +76,6 @@ class RestartManager:
             restart_info = self.device_status_manager.get_restart_info()
             
             
-
             # Get restart evaluator with current config values
             restart_evaluator = self._get_restart_evaluator()
             
@@ -215,7 +214,12 @@ class RestartManager:
             try:
                 self.logger.info("Sending restart notification email")
                 threads = self.device_status_manager.get_threads_status()
-                self.email_service.send_restart_notification(threads=threads, send_threads_info=True)
+                comport_status = self.device_status_manager.get_comport_status()
+                self.email_service.send_restart_notification(
+                    threads=threads, 
+                    send_threads_info=True, 
+                    comport_status=comport_status
+                )
             except Exception as email_error:
                 self.logger.error(f"Failed to send restart notification email: {email_error}")
                 # Continue with restart even if email fails

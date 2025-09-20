@@ -264,6 +264,56 @@ class ServerManager:
                 print("error",e)
         return success_count == total_emails
 
+    def send_email_debug(self):
+        """
+        Debug method to test email functionality with specific device ID and test emails.
+        Uses hardcoded test values for debugging purposes.
+        """
+        # Hardcoded debug values
+        debug_device_id = "2a07b5bc258822179bd48581852efc645209ac7014eacf95f6f50fe8f15777fe7a1ffea4fff8d2a89f7dcae439187059311dff26f08a64efafac42826d1f30d79443439ec47daba4adbce14f5cd809f4e743db439d633a10f4b9b8d185e0bf2fc37df41d4f5fe43b86129b35594962cdac00cca0ea625e7d44c46e1738cc0386ffcb5dd85b6f0060acc6c5f0f29561ac1ac04c88f6f7b2ae6a4fbd59b57439a28e8e5c2f60200609a85706890bd25f4cb3182283e434f02dd10eba51fdeae08c46f7553e79c7f02ac2b0b80e62ecf69197161fa121cb73383f6f099b9733f0ade3da5eb5f5a8befaf7cab30cd187bec573a2bdc5aaa66adacd587f40366b53bd"
+        debug_url = "http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001"
+        debug_emails = ["dan@bulltech.co.il", "asaf@bulltech.co.il"]
+        
+        url = f"{debug_url}/send_email"
+        
+        # Test email content
+        subject = "Debug Test Email"
+        message = "This is a test email from the send_email_debug method using the hardcoded device ID."
+        
+        success_count = 0
+        total_emails = len(debug_emails)
+        
+        print(f"DEBUG: Testing email functionality with device ID: {debug_device_id[:20]}...")
+        print(f"DEBUG: Using server URL: {debug_url}")
+        print(f"DEBUG: Sending to {total_emails} recipients: {debug_emails}")
+        
+        for email in debug_emails:
+            # Prepare the payload
+            payload = {
+                'device_id': debug_device_id,
+                "to_email": email,
+                "subject": subject,
+                'message': message
+            }
+            
+            try:
+                print(f"DEBUG: Attempting to send email to {email}...")
+                response = requests.post(url, json=payload, timeout=30)
+                print(f"DEBUG: Response status: {response.status_code}")
+                print(f"DEBUG: Response text: {response.text}")
+                
+                if response.status_code == 200:
+                    success_count += 1
+                    print(f"DEBUG: Email sent successfully to {email}")
+                else:
+                    print(f"DEBUG: Failed to send email to {email}")
+                    
+            except Exception as e:
+                print(f"DEBUG: Error sending email to {email}: {str(e)}")
+        
+        print(f"DEBUG: Email test completed. {success_count}/{total_emails} emails sent successfully.")
+        return success_count == total_emails
+
     async def download_monitor_files(self):
         # Get the monitor directory path where files will be saved
         save_path = self.parent.osManager.get_monitor_dir_path()
@@ -674,7 +724,7 @@ class ServerManager:
 if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
+    server.send_email_debug()
+    #server.set_download_files(locations=["Dan's PC"], eintzofia_download=True,monitor_download=True, model_download=True)
 
-    server.set_download_files(locations=["Dan's PC"], eintzofia_download=True,monitor_download=True, model_download=True)
-
-    #server.download_encrypted_model(device_id=OS_manager.generate_device_id(),#password='M0mTyaNwsQ6Lqr8l')
+    

@@ -123,7 +123,22 @@ class DeviceStatusManager:
             if device_info.get('type') == DeviceType.THREAD.value:
                 threads[device_id] = device_info.get('status', 'unknown')
         return threads
-    
+
+    def comport_failed(self) -> bool:
+        """Check if any COM port device has a 'fail' status"""
+        for device_id, device_info in self._device_statuses.items():
+            if (device_info.get('type') == DeviceType.COMPORT.value and 
+                device_info.get('status') == 'fail'):
+                return True
+        return False
+
+    def get_comport_status(self) -> str:
+        """Get the status of the first COM port device found, or 'none' if no comport exists"""
+        for device_id, device_info in self._device_statuses.items():
+            if device_info.get('type') == DeviceType.COMPORT.value:
+                return device_info.get('status', 'unknown')
+        return 'none'
+
     def get_restart_info(self) -> dict:
         """Get a copy of restart information."""
         return self._restart_info.copy()

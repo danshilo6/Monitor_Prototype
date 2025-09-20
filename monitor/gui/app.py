@@ -481,6 +481,44 @@ def create_server_manager(config_service: ConfigService) -> ServerManager:
         logger.error(f"Failed to create server manager: {e}")
         raise
 
+def setup_location_name(config_service: ConfigService) -> None:
+    """
+    Setup location name in config using device ID if not already configured.
+    Uses first 5 and last 5 characters of device ID for a unique but shorter identifier.
+    
+    Args:
+        config_service: Configuration service instance to update
+    """
+    logger = get_logger("monitor.gui.app")
+    
+    try:
+        # Get location name from config
+        location_name = config_service.get("general", "location_name", "")
+        
+        if not location_name:
+            # Create OS manager to get unique device ID
+            os_manager = OSManager(config_service)
+            device_id = os_manager.generate_device_id()
+            
+            # Use first 5 and last 5 characters of device ID
+            if len(device_id) >= 10:
+                location_name = device_id[:5] + device_id[-5:]
+            else:
+                # If device ID is shorter than 10 chars, use the whole ID
+                location_name = device_id
+            
+            # Save to config
+            config_service.set("general", "location_name", location_name)
+            logger.info(f"Location name was empty, set to device ID subset '{location_name}' in config")
+            print(f"DEBUG: Location name set to device ID subset: {location_name}")
+        else:
+            logger.debug(f"Location name already configured: {location_name}")
+            print(f"DEBUG: Location name already configured: {location_name}")
+            
+    except Exception as e:
+        logger.error(f"Error setting up location name: {e}")
+        print(f"DEBUG: Error setting up location name: {e}")
+
 def authenticate_with_server_auto(config_service: ConfigService, server_manager: ServerManager, parent=None) -> bool:
     """
     Automated authentication with server using predefined password and config location.
@@ -579,10 +617,8 @@ def authenticate_with_server(config_service: ConfigService, server_manager: Serv
             logger.info("Device already approved - authentication successful")
             return True
 
-        # Get location name from config, default to "unknown" if empty
+        # Get location name from config (should already be set by setup_location_name)
         location_name = config_service.get("general", "location_name", "")
-        if not location_name:
-            location_name = "unknown"
         print(f"LOCATION NAME: {location_name}\n")
 
         # Use hardcoded password
@@ -682,6 +718,8 @@ def parse_arguments():
 
 
 def main() -> int:
+    print("Starting Monitor Application...")
+
     """Main application entry point."""
     # Parse command line arguments
     args = parse_arguments()
@@ -706,6 +744,9 @@ def main() -> int:
         # Migrate location from old settings.pkl if needed
         migrate_location_from_old_settings(config_service)
         
+        # Setup location name from device ID if not configured
+        setup_location_name(config_service)
+
         # Setup EinTzofia path if needed
         setup_eintzofia_path(config_service)
         
@@ -722,6 +763,8 @@ def main() -> int:
         server_manager = create_server_manager(config_service)
         
         # ---------------------- AUTHENTICATION BEFORE MAIN WINDOW ----------------------
+        
+        
         
         # Set server URL directly from config
         server_url = config_service.get("general", "server_url", "http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000")   

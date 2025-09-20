@@ -55,6 +55,17 @@ class RestartEvaluator:
             self.logger.info("Restart requested due to pending updates")
             return True
 
+        # Check timing constraints
+        if not self._check_engine_runtime(engine_start_time):
+            return False
+        if not self._check_restart_cooldown(restart_info):
+            return False
+
+        # Check if Comport failed
+        if self.comport_failed(device_statuses):
+            self.logger.info("Restart approved due comport failure")
+            return True
+
         # Check if any thread devices are in fail status
         failed_thread_device = self._find_failed_thread_device(device_statuses)
         thread_devices = self._find_thread_devices(device_statuses)
@@ -62,15 +73,7 @@ class RestartEvaluator:
             self.logger.debug("No failed thread devices found")
             return False
         
-        self.logger.debug(f"Found failed thread device: {failed_thread_device}")
-        
-        # Check timing constraints
-        if not self._check_engine_runtime(engine_start_time):
-            return False
-        
-        if not self._check_restart_cooldown(restart_info):
-            return False
-        
+        self.logger.debug(f"Found failed thread device: {failed_thread_device}")        
         self.logger.info("All restart conditions met - restart approved")
         return True
     
@@ -98,7 +101,14 @@ class RestartEvaluator:
             device_id for device_id, device_info in devices_statuses.items() if device_info.get('type', '').lower() == thread_type
         ]
 
-
+    def comport_failed(self, device_statuses: Dict[str, Dict[str, Any]]) -> bool:
+        """Check if any COM port device has a 'fail' status"""
+        for device_id, device_info in device_statuses.items():
+            if (device_info.get('type') == DeviceType.COMPORT.value and 
+                device_info.get('status') == 'fail'):
+                print("\n\n\n****** COMPORT FAILED *******\n\n\n")
+                return True
+        return False
 
     def _check_engine_runtime(self, engine_start_time: Optional[datetime]) -> bool:
         """
