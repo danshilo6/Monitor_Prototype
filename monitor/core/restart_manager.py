@@ -7,12 +7,14 @@ Handles all computer restart logic and decision making.
 import psutil
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Dict, Any, Optional
 from monitor.log_setup import get_logger
-from monitor.core.evaluators.restart_evaluator import RestartEvaluator
 from monitor.core.device_status_manager import DeviceStatusManager
 from monitor.services.config_service import ConfigService
 from monitor.core.os_manager import OSManager
 from monitor.services.notification_service import NotificationService
+from monitor.services.devices_models import DeviceType
+from monitor.core.restart_db import RestartDB
 
 
 class RestartManager:
@@ -20,7 +22,7 @@ class RestartManager:
     Manages computer restart decisions and execution.
     
     This class handles:
-    - Evaluating if restart conditions are met
+    - Evaluating if restart conditions are met (previously in RestartEvaluator)
     - Checking if Ein Tzofia is running (if enabled)
     - Recording restart attempts
     - Executing computer restarts
@@ -47,6 +49,9 @@ class RestartManager:
         # Store device status manager for restart info updates
         self.device_status_manager = device_status_manager
         
+        # Initialize restart database
+        self.restart_db = RestartDB()
+        
         # Constants for defaults
         self.DEFAULT_RESTART = 5
         self.DEFAULT_RESTART_COOLDOWN = 30
@@ -54,11 +59,99 @@ class RestartManager:
         
         self.logger.debug("RestartManager initialized")
 
-    def _get_restart_evaluator(self):
-        """Get restart evaluator with current config values."""
-        minutes_to_restart = int(self.config_service.get("system", "minutes_to_restart", self.DEFAULT_RESTART))
-        restart_cooldown_minutes = int(self.config_service.get("system", "restart_cooldown_minutes", self.DEFAULT_RESTART_COOLDOWN))
-        return RestartEvaluator(self.logger, minutes_to_restart, restart_cooldown_minutes)
+ 
+    
+    def _find_failed_thread_device(self, device_statuses: Dict[str, Dict[str, Any]]) -> Optional[str]:
+        """
+        Find the first failed thread device.
+        
+        Args:
+            device_statuses: Dictionary of device statuses
+            
+        Returns:
+            Device ID of first failed thread device, or None if none found
+        """
+        for device_id, device_info in device_statuses.items():
+            if (
+                device_info.get('status') == 'fail' and
+                device_info.get('type', '').lower() == DeviceType.THREAD.value.lower()
+            ):
+                return device_id
+        return None
+    
+    def _find_thread_devices(self, devices_statuses: Dict[str, Dict[str, Any]]) -> list[str]:
+        """Find all thread devices."""
+        thread_type = DeviceType.THREAD.value.lower()
+        return [
+            device_id for device_id, device_info in devices_statuses.items() if device_info.get('type', '').lower() == thread_type
+        ]
+
+    def _comport_failed(self, device_statuses: Dict[str, Dict[str, Any]]) -> bool:
+        """Check if any COM port device has a 'fail' status"""
+        for device_id, device_info in device_statuses.items():
+            if (device_info.get('type') == DeviceType.COMPORT.value and 
+                device_info.get('status') == 'fail'):
+                print("\n\n\n****** COMPORT FAILED *******\n\n\n")
+                return True
+        return False
+
+    def _check_engine_runtime(self, engine_start_time: Optional[datetime], minutes_to_restart: int) -> bool:
+        """
+        Check if the engine has been running long enough to allow restart.
+        
+        Args:
+            engine_start_time: When the decision engine started
+            minutes_to_restart: Minimum minutes the engine must run before restart
+            
+        Returns:
+            True if engine has run long enough, False otherwise
+        """
+        if engine_start_time is None:
+            self.logger.debug("Engine start time is None, cannot restart")
+            return False
+        
+        engine_runtime = datetime.now() - engine_start_time
+        restart_threshold = timedelta(minutes=minutes_to_restart)
+        
+        if engine_runtime < restart_threshold:
+            self.logger.debug(f"Engine runtime ({engine_runtime}) < restart threshold ({restart_threshold})")
+            return False
+        
+        self.logger.debug(f"Engine runtime check passed: {engine_runtime} >= {restart_threshold}")
+        return True
+    
+    def _check_restart_cooldown(self, restart_info: Dict[str, Any], restart_cooldown_minutes: int) -> bool:
+        """
+        Check if enough time has passed since the last restart.
+        
+        Args:
+            restart_info: Dictionary containing restart history
+            restart_cooldown_minutes: Minimum minutes between restarts
+            
+        Returns:
+            True if cooldown period has passed, False otherwise
+        """
+        last_restart_str = restart_info.get('last_restart_time')
+        if not last_restart_str:
+            self.logger.debug("No previous restart recorded, cooldown check passed")
+            return True
+        
+        try:
+            last_restart_time = datetime.fromisoformat(last_restart_str)
+            time_since_last_restart = datetime.now() - last_restart_time
+            cooldown_threshold = timedelta(minutes=restart_cooldown_minutes)
+            
+            if time_since_last_restart < cooldown_threshold:
+                self.logger.debug(f"Restart cooldown active: {time_since_last_restart} < {cooldown_threshold}")
+                print(f"Still in cooldown: {time_since_last_restart} < {cooldown_threshold}")  # TODO: Remove this print later
+                return False
+            
+            self.logger.debug(f"Cooldown check passed: {time_since_last_restart} >= {cooldown_threshold}")
+            return True
+            
+        except ValueError as e:
+            self.logger.warning(f"Could not parse last restart time '{last_restart_str}': {e}")
+            return True  # If we can't parse the time, allow restart
     
     def should_restart_computer(self, engine_start_time: datetime) -> tuple[bool, str]:
         """
@@ -75,48 +168,55 @@ class RestartManager:
             device_statuses = self.device_status_manager.get_device_statuses()
             restart_info = self.device_status_manager.get_restart_info()
             
-            
-            # Get restart evaluator with current config values
-            restart_evaluator = self._get_restart_evaluator()
-            
             # Check restart conditions (including update flag)
-            if not restart_evaluator.should_restart(
-                device_statuses, restart_info, engine_start_time, self.config_service
-            ):
-                # Check if there are failed thread devices for logging
-                failed_device = restart_evaluator._find_failed_thread_device(device_statuses)
-                if failed_device:
-                    engine_runtime = datetime.now() - engine_start_time if engine_start_time else timedelta(0)
-                    reason = f"Thread device failure detected but not restarting - engine runtime: {engine_runtime}"
-                    return False, reason
-                return False, "No restart conditions met"
+            # First check if restart is requested due to updates
+            if self.config_service.get("system", "pending_restart_after_update", False):
+                self.logger.info("Restart requested due to pending updates")
+                return True, "Updates applied - restart required"
+
+            # Get current config values
+            minutes_to_restart = int(self.config_service.get("system", "minutes_to_restart", self.DEFAULT_RESTART))
+            restart_cooldown_minutes = int(self.config_service.get("system", "restart_cooldown_minutes", self.DEFAULT_RESTART_COOLDOWN))
+
+            # Check timing constraints
+            if not self._check_engine_runtime(engine_start_time, minutes_to_restart):
+                engine_runtime = datetime.now() - engine_start_time if engine_start_time else timedelta(0)
+                return False, f"Engine runtime ({engine_runtime}) less than required threshold ({minutes_to_restart} minutes)"
             
-            # Check if restart is due to updates
-            update_restart_pending = self.config_service.get("system", "pending_restart_after_update", False)
-            if update_restart_pending:
-                reason = "Updates applied - restart required"
-                return True, reason
+            if not self._check_restart_cooldown(restart_info, restart_cooldown_minutes):
+                last_restart_str = restart_info.get('last_restart_time', 'unknown')
+                return False, f"Still in restart cooldown period (last restart: {last_restart_str})"
+
+            # Check if Comport failed
+            if self._comport_failed(device_statuses):
+                self.logger.info("Restart approved due comport failure")
+                return True, "COM port device failure detected - restart approved"
+
+            # Check if any thread devices are in fail status
+            failed_thread_device = self._find_failed_thread_device(device_statuses)
+            thread_devices = self._find_thread_devices(device_statuses)
+            if not failed_thread_device and len(thread_devices) >= 3:
+                self.logger.debug("No failed thread devices found")
+                return False, "No failed thread devices found"
             
-            # If basic conditions are met, check Ein Tzofia running condition if enabled
-            check_eintzofia_running_enabled = self.config_service.get("system", "check_eintzofia_running", self.DEFAULT_CHECK_EINTZOFIA_RUNNING)
-            if check_eintzofia_running_enabled:
-                if not self._is_eintzofia_running():
-                    reason = "Thread device failure detected but Ein Tzofia is NOT running - restart blocked"
-                    return False, reason
-                else:
-                    reason = "Ein Tzofia is running - restart approved"
-                    return True, reason
+            if failed_thread_device:
+                self.logger.debug(f"Found failed thread device: {failed_thread_device}")        
+                self.logger.info("All restart conditions met - restart approved")
+                return True, f"Thread device failure detected ({failed_thread_device}) - restart approved"
             else:
-                reason = "Ein Tzofia running check disabled - restart approved"
-                return True, reason
-                
+                # Less than 3 thread devices and at least one failed
+                return True, "Thread device failure detected (insufficient thread devices) - restart approved"
+
         except Exception as e:
             self.logger.error(f"Error checking restart conditions: {e}")
             return False, f"Error checking restart conditions: {e}"
     
-    def execute_restart(self) -> None:
+    def execute_restart(self, reason: str = "Manual restart") -> None:
         """
-        Execute computer restart and update restart info.
+        Execute computer restart and record it in the database.
+        
+        Args:
+            reason: The reason for the restart (will be stored in database)
         """
         try:
             # Clear the update restart flag before restarting
@@ -129,29 +229,27 @@ class RestartManager:
             restart_enabled = self.config_service.get("system", "enable_restart", True)
             if not restart_enabled:
                 self.logger.info("Restart requested but disabled in config - skipping restart")
+                print("Restart disabled in config - skipping restart")
                 return
             
-            restart_reason = "updates applied" if update_restart_pending else "thread device failure"
-            self.logger.info(f"RESTARTING COMPUTER due to {restart_reason}")
-            print(f"RESTARTING COMPUTER due to {restart_reason}")
+            # Record the restart in database with reason
+            if not self.restart_db.add_restart_record(reason):
+                self.logger.warning("Failed to record restart in database, but continuing with restart")
             
-            # Get current restart info
+            # Update legacy restart info for backward compatibility
             restart_info = self.device_status_manager.get_restart_info()
-            
-            # Record the restart
             restart_count = restart_info.get('restart_count', 0) + 1
-            restart_record = self.create_restart_record()
-            restart_record['restart_count'] = restart_count
+            current_time = datetime.now()
             
             updated_restart_info = {
-                'last_restart_time': restart_record['last_restart_time'],
+                'last_restart_time': current_time.isoformat(),
                 'restart_count': restart_count
             }
             
-            # Update restart info directly through device status manager
+            # Update restart info through device status manager
             self.device_status_manager.update_restart_info(updated_restart_info)
             
-            self.logger.info(f"Recorded restart #{restart_count} at {restart_record['timestamp']}")
+            self.logger.info(f"Recorded restart #{restart_count} at {current_time} - Reason: {reason}")
             
             # Send restart notification email before restarting
             self.send_restart_notification()
@@ -225,3 +323,33 @@ class RestartManager:
                 # Continue with restart even if email fails
         else:
             self.logger.debug("No email service configured - skipping restart notification email")
+
+    def get_restart_history(self, limit: int = 100) -> list[dict]:
+        """
+        Get restart history from the database.
+        
+        Args:
+            limit: Maximum number of restart records to return (default: 100)
+            
+        Returns:
+            List of restart records, most recent first
+        """
+        return self.restart_db.get_restart_history(limit)
+
+    def get_restart_statistics(self) -> dict:
+        """
+        Get restart statistics from the database.
+        
+        Returns:
+            Dictionary containing restart statistics
+        """
+        return self.restart_db.get_restart_statistics()
+
+    def get_restart_count(self) -> int:
+        """
+        Get the total number of restart records in the database.
+        
+        Returns:
+            Total count of restart records
+        """
+        return self.restart_db.get_restart_count()

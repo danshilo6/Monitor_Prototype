@@ -130,7 +130,6 @@ class DecisionEngine(QObject):
         self.consecutive_count_evaluator = None
         self.timeout_evaluator = None
         self.failure_rate_evaluator = None
-        self.restart_evaluator = None
         self.restart_manager = None  # Will be initialized in start() with config
 
         # Note: Alert database connection will be handled via signals    
@@ -438,22 +437,19 @@ class DecisionEngine(QObject):
                 self._start_time
             )
             
-            # Log the decision
+            print("Should Restart?")
             if should_restart:
                 self.logger.info(f"Restart approved: {reason}")
-                print(f"Restart approved: {reason}")  # TODO: Remove this print later
-                
+                print(f"Yes:   {reason}")
                 # Execute restart (restart manager will update restart info directly)
-                self.restart_manager.execute_restart()
+                self.restart_manager.execute_restart(reason)
             else:
-                self.logger.info(f"Restart blocked: {reason}")
-                if "Thread device failure detected" in reason:
-                    print(f"{reason}")  # TODO: Remove this print later
+                print(f"No:    {reason}")
+                self.logger.info(f"Not Restarting: {reason}")
                 
         except Exception as e:
             self.logger.error(f"Error checking restart conditions: {e}")
     
-    # TODO: Delete this
     def _pulse_to_server(self) -> None:
         """Send pulse to server at the end of monitoring cycle."""
         try:

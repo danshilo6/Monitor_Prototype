@@ -1,0 +1,156 @@
+/* Restart History Page Styles */
+
+/* Page Header */
+QLabel#page-header {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2d3142;
+    margin: 2px 0px;
+    padding: 2px;
+    background-color: #f8f9fa;
+}
+
+/* Statistics Frame Styling */
+QFrame#statsFrame {
+    background-color: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin: 8px 0px;
+    padding: 4px;
+}
+
+QLabel#statsLabel {
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 13px;
+    color: #2d3142;
+    padding: 2px 8px;
+}
+
+QLabel#statsSeparator {
+    color: #c0c0c0;
+    font-size: 13px;
+    padding: 2px 4px;
+}
+
+/* Restart History Table Styles */
+QTableView#restartHistoryTable {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    gridline-color: #f0f0f0;
+    selection-background-color: transparent;
+    alternate-background-color: #f8f9fa;
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+}
+
+QTableView#restartHistoryTable::item {
+    padding: 12px 8px;
+    border: none;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
+    color: #2d3142;
+    min-height: 24px;
+}
+
+/* Remove selection highlighting */
+QTableView#restartHistoryTable::item:selected {
+    background-color: transparent;
+    color: #2d3142;
+}
+
+QTableView#restartHistoryTable::item:focus {
+    background-color: transparent;
+    outline: none;
+}
+
+/* Header styling */
+QTableView#restartHistoryTable QHeaderView::section {
+    background-color: #f8f9fa;
+    padding: 8px 8px;
+    border: none;
+    border-bottom: 2px solid #e0e0e0;
+    color: #2d3142;
+    font-size: 13px;
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    min-height: 28px;
+}
+
+QTableView#restartHistoryTable QHeaderView::section:first {
+    /* Timestamp column specific styling */
+    text-align: center;
+}
+
+/* Scrollbar styling */
+QTableView#restartHistoryTable QScrollBar:vertical {
+    background-color: #f5f5f5;
+    width: 8px;
+    border-radius: 4px;
+}
+
+QTableView#restartHistoryTable QScrollBar::handle:vertical {
+    background-color: #c0c0c0;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+QTableView#restartHistoryTable QScrollBar::handle:vertical:hover {
+    background-color: #a0a0a0;
+}
+
+QTableView#restartHistoryTable QScrollBar::add-line:vertical,
+QTableView#restartHistoryTable QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+/* Horizontal scrollbar (if needed) */
+QTableView#restartHistoryTable QScrollBar:horizontal {
+    background-color: #f5f5f5;
+    height: 8px;
+    border-radius: 4px;
+}
+
+QTableView#restartHistoryTable QScrollBar::handle:horizontal {
+    background-color: #c0c0c0;
+    border-radius: 4px;
+    min-width: 20px;
+}
+
+QTableView#restartHistoryTable QScrollBar::handle:horizontal:hover {
+    background-color: #a0a0a0;
+}
+
+QTableView#restartHistoryTable QScrollBar::add-line:horizontal,
+QTableView#restartHistoryTable QScrollBar::sub-line:horizontal {
+    width: 0px;
+}
+
+/* Empty state message styling (when no data) */
+QTableView#restartHistoryTable {
+    color: #666666;
+    font-style: italic;
+}
+
+/* Hover effects for better UX (even though selection is disabled) */
+QTableView#restartHistoryTable::item:hover {
+    background-color: #f0f8ff;
+}
+
+/* Specific styling for timestamp column */
+QTableView#restartHistoryTable::item:first-child {
+    font-family: "Consolas", "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-weight: normal;
+    color: #555555;
+    text-align: center;
+}
+
+/* Specific styling for reason column */
+QTableView#restartHistoryTable::item:last-child {
+    font-weight: 500;
+    color: #2d3142;
+}
+
+/* Corner widget (intersection of scrollbars) */
+QTableView#restartHistoryTable QAbstractScrollArea::corner {
+    background-color: #f5f5f5;
+    border: none;
+}

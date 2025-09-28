@@ -685,8 +685,8 @@ class ServerManager:
                 'device_id': device_id,
                 'password': password
             }
-            response = requests.post(url, json=payload)
-            data = response.json(timeout=3600, connect=30)  # 1 hour total timeout
+            response = requests.post(url, json=payload, timeout=3600)  # 1 hour timeout
+            data = response.json()  # 1 hour total timeout
             if data['status'] == 'success':
                 # get the zipped files and save them to current dir
                 current_dir = os.path.dirname(os.path.abspath(__file__))

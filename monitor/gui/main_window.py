@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from monitor.gui.widgets.navigation_bar import NavigationBar
 from monitor.gui.widgets.custom_title_bar import CustomTitleBarWindow
 from monitor.gui.pages.alerts_page import AlertsPage
+from monitor.gui.pages.restart_history_page import RestartHistoryPage
 from monitor.gui.pages.contacts_page import ContactsPage
 from monitor.gui.pages.settings_page import SettingsPage
 from monitor.gui.styles import style_manager
@@ -113,6 +114,7 @@ class MainWindow(CustomTitleBarWindow):
                 "main_window",
                 "navigation_bar",
                 "alerts",
+                "restart_history",
                 "contacts",
                 "settings"
             )
@@ -283,6 +285,9 @@ class MainWindow(CustomTitleBarWindow):
         if page_name == "alerts":
             # Alerts page uses signals and Model/View pattern
             return AlertsPage()
+        elif page_name == "restarts":
+            # Restart history page uses Model/View pattern
+            return RestartHistoryPage()
         elif page_name == "contacts":
             # Contacts page uses Model/View with dependency injection
             return ContactsPage(self._contact_db)
@@ -300,6 +305,9 @@ class MainWindow(CustomTitleBarWindow):
                 # Connect alerts page to alert database via signals (Model/View + Signals)
                 page.connect_external_signals(self._alert_db)
                 self.logger.debug("Alerts page signals connected successfully")
+            elif page_name == "restarts":
+                # Restart history page doesn't need external signals - it accesses DB directly
+                self.logger.debug("Restart history page uses direct DB access - no external signals to connect")
             elif page_name == "contacts":
                 # Contacts page uses Model/View with DI - no additional signals needed
                 self.logger.debug("Contacts page uses dependency injection - no external signals to connect")
