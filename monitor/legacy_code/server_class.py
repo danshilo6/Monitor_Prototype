@@ -32,12 +32,13 @@ class ServerManager:
         self.os_manager = os_manager
         #check if ran as unfrozen code
         #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
-        self.base_url = 'http://127.0.0.1:5001'
+        #self.base_url = 'http://127.0.0.1:5001'
         #else:
         #    self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
 
         #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
-
+        
+        self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
     
     def upload_configuration(self):
         temp_dir_path = self.parent.osManager.get_temp_dir_path()
@@ -677,54 +678,80 @@ class ServerManager:
             traceback.print_exc()
             return None
 
-    async def download_encrypted_model(self, device_id,password):
+    async def download_encrypted_model(self, device_id, password):
         print(f"DEBUG: Downloading encrypted model for device {device_id}")
-        try:
-            url = f"{self.base_url}/send_encrypted_model"
-            payload = {
-                'device_id': device_id,
-                'password': password
-            }
-            response = requests.post(url, json=payload, timeout=3600)  # 1 hour timeout
-            data = response.json()  # 1 hour total timeout
-            if data['status'] == 'success':
-                # get the zipped files and save them to current dir
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                zip_path = os.path.join(current_dir, 'encrypted_model.zip')
-                
-                # Decode base64 string back to bytes                
-                zip_content_bytes = base64.b64decode(data['encrypted_model'])
-                
-                # save the zipped files to current dir
-                with open(zip_path, 'wb') as f:
-                    f.write(zip_content_bytes)
-                print(f"DEBUG: Encrypted model saved successfully to: {zip_path}")
-                
-                save_path = self.parent.osManager.get_data_dir_path()
-
-                # extract the zipped files to current dir
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(save_path)
-                print(f"DEBUG: Extracted encrypted model to: {save_path}")
-
-                # delete the zipped file
-                os.remove(zip_path)
-                return True
-
-            else:
-                print(f"DEBUG: Failed to download encrypted model. Status code: {response.status_code}")
-                print(f"DEBUG: Response: {response.text}")
-                return False
         
+        url = f"{self.base_url}/send_encrypted_model"
+        download_timeout = aiohttp.ClientTimeout(total=3600, connect=30)  # 1 hour total timeout
+        
+        payload = {
+            'device_id': device_id,
+            'password': password
+        }
+        
+        try:
+            async with aiohttp.ClientSession(timeout=download_timeout) as session:
+                print("Encrypted model download started")
+                async with session.post(url, json=payload) as response:
+                    if response.status == 200:
+                        # Server now sends the zip file directly, not JSON
+                        content_type = response.headers.get('content-type', '')
+                        if 'application/zip' not in content_type:
+                            # If it's not a zip file, it might be an error response
+                            try:
+                                error_data = await response.json()
+                                print(f"DEBUG: Server returned error: {error_data.get('message', 'Unknown error')}")
+                                return False
+                            except:
+                                print(f"DEBUG: Unexpected response content type: {content_type}")
+                                return False
+                        
+                        # Get save path and create zip file path
+                        save_path = self.parent.osManager.get_data_dir_path()
+                        current_dir = os.path.dirname(os.path.abspath(__file__))
+                        zip_path = os.path.join(current_dir, f'encrypted_model_{device_id[:8]}.zip')
+                        
+                        # Read the zip file content directly
+                        zip_content = await response.read()
+                        file_size = len(zip_content)
+                        print(f"DEBUG: Downloaded {file_size / (1024*1024):.2f} MB")
+                        
+                        # Save the zip file
+                        with open(zip_path, 'wb') as f:
+                            f.write(zip_content)
+                        print(f"DEBUG: Encrypted model saved successfully to: {zip_path}")
+                        
+                        # Extract the zip file
+                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                            zip_ref.extractall(save_path)
+                        print(f"DEBUG: Extracted encrypted model to: {save_path}")
+                        
+                        # Clean up zip file
+                        os.remove(zip_path)
+                        print("DEBUG: Cleaned up temporary zip file")
+                        return True
+                        
+                    else:
+                        # Handle error responses
+                        try:
+                            error_data = await response.json()
+                            print(f"DEBUG: Server error: {error_data.get('message', 'Unknown error')}")
+                        except:
+                            print(f"DEBUG: Download failed. Status code: {response.status}")
+                            print(f"DEBUG: Response text: {await response.text()}")
+                        return False
+                        
         except Exception as e:
             print(f"DEBUG: Exception in download_encrypted_model: {e}")
+            traceback.print_exc()
+            return False
             traceback.print_exc()
             return False
 
 if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
-    server.send_email_debug()
-    #server.set_download_files(locations=["Dan's PC"], eintzofia_download=True,monitor_download=True, model_download=True)
+    #server.send_email_debug()
+    server.set_download_files(locations=["Dan's PC"], eintzofia_download=False,monitor_download=False, model_download=True)
 
     
