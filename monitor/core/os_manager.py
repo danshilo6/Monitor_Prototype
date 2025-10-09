@@ -1,6 +1,11 @@
 import os
 import sys
 import platform
+import os
+import sys
+import platform
+import json
+import re
 from pathlib import Path
 from monitor.log_setup import get_logger
 
@@ -259,3 +264,110 @@ class OSManager:
     def close_then_open_file(self, file_path):
         """Close then open file using legacy implementation."""
         return self.legacy_os.close_then_open_file(file_path)
+    
+    def check_camera_folders_changed(self):
+        """
+        Check if any camera folders in EinTzofia's _internal/temp directory have changed.
+        
+        Camera folders are identified by IP address pattern (e.g., "192.168.1.100").
+        Timestamps are saved to a JSON file in the monitor's data directory and persist between program runs.
+        
+        Returns:
+            bool: True if any folder changed since last check, False otherwise
+        """
+        logger = get_logger("monitor.core.os_manager")
+        
+        temp_dir = self.get_temp_dir_path
+
+        if not temp_dir.exists():
+            logger.debug(f"Temp directory not found: {temp_dir}")
+            print(f"DEBUG: Temp directory not found: {temp_dir}")
+            return False
+        
+        # Path for saved timestamps file in monitor's data directory
+        monitor_data_dir = Path(self.get_monitor_dir_path()) / "data"
+        timestamps_file = monitor_data_dir / "camera_folder_timestamps.json"
+        
+        # IP address pattern (basic validation for camera folder names)
+        ip_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+        
+        current_timestamps = {}
+        
+        try:
+            # Find all directories that match IP address pattern
+            for item in temp_dir.iterdir():
+                if item.is_dir() and ip_pattern.match(item.name):
+                    # Get last modified time
+                    timestamp = item.stat().st_mtime
+                    current_timestamps[item.name] = timestamp
+                    
+            logger.debug(f"Found {len(current_timestamps)} camera folders in {temp_dir}")
+            
+            # Load saved timestamps from file in monitor's data directory
+            saved_timestamps = {}
+            if timestamps_file.exists():
+                try:
+                    with open(timestamps_file, 'r') as f:
+                        saved_timestamps = json.load(f)
+                    logger.debug(f"Loaded saved timestamps from {timestamps_file}")
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.warning(f"Error reading timestamps file: {e}")
+                    saved_timestamps = {}
+            
+            # If no saved timestamps (first run), save current state and return False
+            if not saved_timestamps:
+                self._save_timestamps(timestamps_file, current_timestamps)
+                logger.debug("First check - saved camera folder timestamps to monitor data directory")
+                print("DEBUG: First check - saved camera folder timestamps to monitor data directory")
+                return False
+            
+            # Check for changes
+            changed = False
+            
+            # Check if any existing folders have newer timestamps
+            for folder_name, current_time in current_timestamps.items():
+                saved_time = saved_timestamps.get(folder_name, 0)
+                if current_time > saved_time:
+                    logger.debug(f"Camera folder changed: {folder_name}")
+                    print(f"DEBUG: Camera folder changed: {folder_name}")
+                    changed = True
+            
+            # Check if any folders were added or removed
+            if set(current_timestamps.keys()) != set(saved_timestamps.keys()):
+                logger.debug("Camera folder list changed")
+                print("DEBUG: Camera folder list changed")
+                changed = True  
+            
+            # Save updated timestamps to monitor's data directory
+            if changed:
+                self._save_timestamps(timestamps_file, current_timestamps)
+            
+            return changed
+            
+        except Exception as e:
+            logger.error(f"Error checking camera folders: {e}")
+            print(f"DEBUG: Error checking camera folders: {e}")
+            return False
+    
+    def _save_timestamps(self, file_path, timestamps):
+        """
+        Save timestamps to JSON file.
+        
+        Args:
+            file_path: Path to save the timestamps file
+            timestamps: Dictionary of folder timestamps to save
+        """
+        logger = get_logger("monitor.core.os_manager")
+        
+        try:
+            # Ensure directory exists
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save timestamps to JSON file
+            with open(file_path, 'w') as f:
+                json.dump(timestamps, f, indent=2)
+            
+            logger.debug(f"Saved {len(timestamps)} camera folder timestamps to {file_path}")
+            
+        except Exception as e:
+            logger.error(f"Error saving timestamps file: {e}")

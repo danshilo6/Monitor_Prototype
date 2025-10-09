@@ -95,7 +95,7 @@ class LogReader:
         return conn
 
     # ---------- public API -------------------------------------------------
-    def read_next(self, limit: int = None) -> pd.DataFrame:
+    def read_next(self) -> pd.DataFrame:
         """
         Return all new rows (id > last_id) that haven't been read yet.
         If limit is specified, return up to that many rows.
@@ -114,31 +114,18 @@ class LogReader:
 
         try:
             print(f"trying to read from logs db file {db_path}")
-            if limit is None:
-                # Read all unread rows
-                df = pd.read_sql_query(
-                    f"""
-                    SELECT *
-                    FROM {self._table}
-                    WHERE id > ?
-                    ORDER BY id ASC
-                    """,
-                    conn,
-                    params=(self._last_id,),
-                )
-            else:
-                # Read up to limit rows (for backward compatibility)
-                df = pd.read_sql_query(
-                    f"""
-                    SELECT *
-                    FROM {self._table}
-                    WHERE id > ?
-                    ORDER BY id ASC
-                    LIMIT ?
-                    """,
-                    conn,
-                    params=(self._last_id, limit),
-                )
+            
+            # Read all unread rows
+            df = pd.read_sql_query(
+                f"""
+                SELECT *
+                FROM {self._table}
+                WHERE id > ?
+                ORDER BY id ASC
+                """,
+                conn,
+                params=(self._last_id,),
+            )
 
             if not df.empty:
                 print(f"successfuly read from logs db file {db_path}")

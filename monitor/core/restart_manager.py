@@ -120,6 +120,14 @@ class RestartManager:
         self.logger.debug(f"Engine runtime check passed: {engine_runtime} >= {restart_threshold}")
         return True
     
+    def _in_new_day_grace_period(self) -> bool:
+        """Check if current time is within the new day grace period, which is 12:00 AM plus the decision engine cycle time."""
+        now = datetime.now()
+        decision_cycle_seconds = int(self.config_service.get("system", "decision_engine_cycle_seconds", 60))
+        decision_cycle_minutes = decision_cycle_seconds // 60
+        grace_minutes = max(decision_cycle_minutes, 1)
+        return now.hour == 0 and now.minute < grace_minutes
+
     def _check_restart_cooldown(self, restart_info: Dict[str, Any], restart_cooldown_minutes: int) -> bool:
         """
         Check if enough time has passed since the last restart.
@@ -187,10 +195,16 @@ class RestartManager:
                 last_restart_str = restart_info.get('last_restart_time', 'unknown')
                 return False, f"Still in restart cooldown period (last restart: {last_restart_str})"
 
-            # Check if Comport failed
+            # Check if Comport failed (even within grace period)
             if self._comport_failed(device_statuses):
                 self.logger.info("Restart approved due comport failure")
                 return True, "COM port device failure detected - restart approved"
+
+            # Check if new day grace period is active: 12:00 AM to 12:0 AM + decision engine cycle
+            # This is for threads that may report fail briefly during daily reset 
+            if self._in_new_day_grace_period():
+                self.logger.info("Restart skipped due to new day grace period")
+                return False, "New day grace period active - skipping restart"
 
             # Check if any thread devices are in fail status
             failed_thread_device = self._find_failed_thread_device(device_statuses)

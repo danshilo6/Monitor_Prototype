@@ -314,7 +314,14 @@ class DecisionEngine(QObject):
         except Exception as e:
             self.logger.error(f"Server pulse error: {e}")
 
-        # Step 4: Evaluate restart conditions
+        # Step 4: Upload to server if needed
+        try:
+            if self.os_manager.check_camera_folders_changed():
+                print("Camera folders changed - uploading to server...")
+        except Exception as e:
+            self.logger.error(f"Camera folder check error: {e}")
+
+        # Step 5: Evaluate restart conditions
         try:
             self._evaluate_restart_conditions()
             self.logger.debug("Restart evaluation completed")

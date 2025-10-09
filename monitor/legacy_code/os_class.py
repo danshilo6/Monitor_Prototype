@@ -307,7 +307,7 @@ class os_manager:
                 if os.path.exists(new_dst):
                     shutil.rmtree(new_dst)
                 
-                shutil.copytree(item_path, new_dst, ignore=shutil.ignore_patterns("snapshots"))
+                shutil.copytree(item_path, new_dst, ignore=shutil.ignore_patterns("snapshots", "*.db", "*.sqlite", "*.sql", "*.txt", "*.log"))
             elif os.path.isfile(item_path) and item == "configfile.pkl":
                 # If it's the configfile.pkl file
                 shutil.copy2(item_path, dst)
