@@ -2,7 +2,7 @@ from __future__ import annotations
 import sqlite3
 import json
 from pathlib import Path
-from datetime import date
+from datetime import date, timedelta
 import pandas as pd
 from monitor.utils.path_utils import get_data_path
 
@@ -32,32 +32,30 @@ class LogReader:
         self._load_state()
 
     def _load_state(self) -> None:
-        """Load last_id only if it's from today, otherwise start fresh."""
-        self._current_day = date.today()  # Always set current day
-        
+        """Load last_id and current_day from state file."""
         try:
             if self._state_file.exists():
                 with open(self._state_file, 'r') as f:
                     state = json.load(f)
                     
+                self._last_id = state.get('last_id', 0)
                 saved_day = state.get('day')
-                today = date.today().isoformat()
                 
-                # Only restore last_id if it's from today
-                if saved_day == today:
-                    self._last_id = state.get('last_id', 0)
+                if saved_day:
+                    self._current_day = date.fromisoformat(saved_day)
                 else:
-                    self._last_id = 0  # New day = start fresh
+                    self._current_day = date.today()
                     
         except Exception:
-            self._last_id = 0  # Safe fallback
+            self._last_id = 0
+            self._current_day = date.today()
 
     def _save_state(self) -> None:
-        """Save current last_id with today's date."""
+        """Save current last_id with current day."""
         try:
             state = {
                 'last_id': self._last_id,
-                'day': date.today().isoformat()
+                'day': self._current_day.isoformat() if self._current_day else date.today().isoformat()
             }
             with open(self._state_file, 'w') as f:
                 json.dump(state, f)
@@ -94,20 +92,8 @@ class LogReader:
         conn.row_factory = sqlite3.Row
         return conn
 
-    # ---------- public API -------------------------------------------------
-    def read_next(self) -> pd.DataFrame:
-        """
-        Return all new rows (id > last_id) that haven't been read yet.
-        If limit is specified, return up to that many rows.
-        Empty DataFrame => nothing new.
-        """
-        # Check if day has changed and reset if needed
-        self._check_day_change()
-        
-        today = date.today()
-        db_path = self._get_db_path_for_day(today)
-        
-        # Open connection for this read operation
+    def _read_from_db(self, db_path: Path) -> pd.DataFrame:
+        """Read unread rows from a specific database file."""
         conn = self._open_connection(db_path)
         if conn is None:
             return pd.DataFrame()
@@ -115,7 +101,6 @@ class LogReader:
         try:
             print(f"trying to read from logs db file {db_path}")
             
-            # Read all unread rows
             df = pd.read_sql_query(
                 f"""
                 SELECT *
@@ -128,18 +113,66 @@ class LogReader:
             )
 
             if not df.empty:
-                print(f"successfuly read from logs db file {db_path}")
-                self._last_id = int(df["id"].iloc[-1])
-                self._save_state()  # Save state after reading new data
+                print(f"successfully read from logs db file {db_path}")
 
             return df
             
         finally:
-            # Always close the connection after the read operation
             conn.close()
 
+    # ---------- public API -------------------------------------------------
+    def read_next(self) -> pd.DataFrame:
+        """
+        Return all new rows (id > last_id) that haven't been read yet.
+        If day has changed, read remaining from previous day (only if yesterday), then from current day.
+        Empty DataFrame => nothing new.
+        """
+        today = date.today()
+        day_changed = self._current_day != today
+        
+        all_rows = []
+        
+        # If day changed, first read any remaining from the previous tracked day
+        if day_changed and self._current_day is not None:
+            # Only read from previous day if it's actually yesterday
+            # If it's older than yesterday, skip those days entirely
+            yesterday = today - timedelta(days=1)
+            
+            if self._current_day == yesterday:
+                # Previous day was yesterday - read remaining entries
+                previous_db_path = self._get_db_path_for_day(self._current_day)
+                previous_df = self._read_from_db(previous_db_path)
+                
+                if not previous_df.empty:
+                    all_rows.append(previous_df)
+            
+            # Reset for new day's database (IDs start from 1 again)
+            self._last_id = 0
+            self._current_day = today
+        
+        # Read from current day's DB
+        today_db_path = self._get_db_path_for_day(today)
+        today_df = self._read_from_db(today_db_path)
+        
+        if not today_df.empty:
+            all_rows.append(today_df)
+            self._last_id = int(today_df["id"].iloc[-1])
+        
+        # Update current day if it wasn't set
+        if self._current_day is None:
+            self._current_day = today
+        
+
+        # Combine all DataFrames
+        if all_rows:
+            result_df = pd.concat(all_rows, ignore_index=True)
+            self._save_state()
+            return result_df
+        else:
+            return pd.DataFrame()
+
     def close(self) -> None:
-        """Save state on close. No persistent connection to close."""
+        """Save state on close"""
         self._save_state()
 
     @staticmethod

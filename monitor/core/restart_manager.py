@@ -195,16 +195,10 @@ class RestartManager:
                 last_restart_str = restart_info.get('last_restart_time', 'unknown')
                 return False, f"Still in restart cooldown period (last restart: {last_restart_str})"
 
-            # Check if Comport failed (even within grace period)
+            # Check if Comport failed 
             if self._comport_failed(device_statuses):
                 self.logger.info("Restart approved due comport failure")
                 return True, "COM port device failure detected - restart approved"
-
-            # Check if new day grace period is active: 12:00 AM to 12:0 AM + decision engine cycle
-            # This is for threads that may report fail briefly during daily reset 
-            if self._in_new_day_grace_period():
-                self.logger.info("Restart skipped due to new day grace period")
-                return False, "New day grace period active - skipping restart"
 
             # Check if any thread devices are in fail status
             failed_thread_device = self._find_failed_thread_device(device_statuses)

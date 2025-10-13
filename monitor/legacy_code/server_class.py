@@ -36,9 +36,9 @@ class ServerManager:
         #else:
         #    self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
 
-        self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
+        #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
         
-        #self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
+        self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
     
     def upload_configuration(self):
         temp_dir_path = self.parent.osManager.get_temp_dir_path()
