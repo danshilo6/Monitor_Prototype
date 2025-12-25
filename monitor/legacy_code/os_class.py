@@ -626,6 +626,90 @@ class os_manager:
         data_dir_path = os.path.join(data_dir_path, 'data')
         return data_dir_path
 
+    def get_folder_contents(self, folder_path):
+        """
+        Returns a list of all files and folders (first level only) in the specified folder.
+        
+        Args:
+            folder_path (str): Path to the folder to list contents of
+            
+        Returns:
+            list: List of file and folder names in the specified folder, or empty list if folder doesn't exist
+        """
+        try:
+            # Check if folder exists
+            if not os.path.exists(folder_path):
+                print(f"Folder not found at: {folder_path}")
+                return []
+            
+            # Get all contents (files and directories) at first level only
+            contents = []
+            for item in os.listdir(folder_path):
+                contents.append(item)
+            
+            print(f"Found {len(contents)} items in folder {folder_path}: {contents}")
+            return contents
+            
+        except Exception as e:
+            print(f"Error getting folder contents from {folder_path}: {e}")
+            return []
+
+    def get_eintzofia_internal_contents(self):
+        """
+        Returns a list of all files and folders (first level only) in the _internal folder 
+        within the EinTzofia directory.
+        
+        Returns:
+            list: List of file and folder names in _internal folder, or empty list if folder doesn't exist
+        """
+        try:
+            # Get EinTzofia directory path
+            EinTzofia_dir_path = os.path.dirname(self.parent.settings['File_Path'])
+            
+            # Construct path to _internal folder
+            internal_folder_path = os.path.join(EinTzofia_dir_path, '_internal')
+            
+            # Use the generic method to get folder contents
+            return self.get_folder_contents(internal_folder_path)
+            
+        except Exception as e:
+            print(f"Error getting _internal folder contents: {e}")
+            return []
+
+    def get_eintzofia_data_contents(self):
+        """
+        Returns a list of all files and folders (first level only) in the data folder 
+        within the EinTzofia _internal directory.
+        
+        Returns:
+            list: List of file and folder names in data folder, or empty list if folder doesn't exist
+        """
+        try:
+            # Get the data folder path using existing method
+            data_folder_path = self.get_data_dir_path()
+            
+            # Use the generic method to get folder contents
+            return self.get_folder_contents(data_folder_path)
+            
+        except Exception as e:
+            print(f"Error getting data folder contents: {e}")
+            return []
+
+    def find_missing_eintzofia_contents(self, manifest):
+        try:
+            manifest = manifest["manifest"]
+            internal_contents = self.get_eintzofia_internal_contents()
+            data_contents = self.get_eintzofia_data_contents()
+            manifest_internal_contents = manifest["_internal"]
+            manifest_data_contents = manifest["data"]
+
+            missing_internal = list(set(manifest_internal_contents).difference(set(internal_contents)))
+            missing_data = list(set(manifest_data_contents).difference(set(data_contents)))
+            return missing_internal, missing_data
+        except Exception as e:
+            print(f"Error finding missing EinTzofia contents: {e}")
+            return [], []
+
     def _get_deterministic_system_id(self):
         """
         Get a deterministic system ID that both apps will compute identically.

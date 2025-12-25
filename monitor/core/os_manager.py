@@ -225,6 +225,14 @@ class OSManager:
         """Get data directory path using legacy implementation."""
         return self.legacy_os.get_data_dir_path()
     
+    def get_eintzofia_internal_contents(self):
+        """Get EinTzofia internal contents using legacy implementation."""
+        return self.legacy_os.get_eintzofia_internal_contents()
+
+    def find_missing_eintzofia_contents(self, manifest):
+        """Find missing EinTzofia contents based on the provided manifest."""
+        return self.legacy_os.find_missing_eintzofia_contents(manifest)
+
     def get_monitor_dir_path(self):
         """Get monitor directory path using legacy implementation."""
         return self.legacy_os.get_monitor_dir_path()

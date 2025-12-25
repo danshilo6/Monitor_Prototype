@@ -470,7 +470,6 @@ def create_server_manager(config_service: ConfigService) -> ServerManager:
     try:
         # Create OS manager instance  
         os_manager = OSManager(config_service)
-        
         # Create server manager with dependencies
         server_manager = ServerManager(config_service, os_manager)
         

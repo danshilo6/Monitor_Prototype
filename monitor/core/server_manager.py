@@ -94,7 +94,20 @@ class ServerManager:
         # Create mock parent and initialize legacy ServerManager
         self.mock_parent = MockParentForServer(config_service, os_manager)
         self.legacy_server = LegacyServerManager(self.mock_parent)
-        
+
+        print("\n--------------------- TEST: GET EINTZOFIA MANIFEST FROM SERVER ---------------------")
+        server_eintzofia_manifest = self.legacy_server.get_eintzofia_manifest()
+        print(server_eintzofia_manifest)
+        print("------------------------------------------------------------------------------------\n")
+        print("\n--------------------- TEST: CREATE LOCAL MANIFEST ---------------------")
+        local_eintzofia_manifest = self.legacy_server.create_local_eintzofia_manifest()
+        print(local_eintzofia_manifest)
+        print("-----------------------------------------------------------------------\n")
+        print("\n--------------------- TEST: COMPARE LOCAL MANIFEST ---------------------")
+        print(self.legacy_server.compare_eintzofia_manifests(server_eintzofia_manifest, local_eintzofia_manifest))
+        print("-----------------------------------------------------------------------\n")
+
+
         self.logger.info("ServerManager initialized")
     
     def update_server_url(self, url):
@@ -231,6 +244,17 @@ class ServerManager:
                     print("EinTzofia files downloaded successfully")
                     self.logger.info("EinTzofia files downloaded successfully")
                     update = True
+                    try:
+                        manifest = self.get_eintzofia_manifest()
+                        if manifest:
+                            missing_internal, missing_data = self.os_manager.find_missing_eintzofia_contents(manifest)
+                            if missing_internal or missing_data:
+                                print(f"!@!@!@!@!@\nMissing _internal contents: {missing_internal}\nMissing data contents: {missing_data}\n!@!@!@!@!@") 
+                                self.logger.info(f"Missing _internal contents: {missing_internal}, Missing data contents: {missing_data}")
+                    except Exception as e:
+                        self.logger.error(f"Error getting EinTzofia manifest: {e}")
+                        manifest = None
+
                 else:
                     self.logger.warning("EinTzofia files download failed")
             except Exception as e:
@@ -369,3 +393,13 @@ class ServerManager:
         except Exception as e:
             self.logger.error(f"Failed to upload zip file: {e}")
             return None
+    
+    def get_eintzofia_manifest(self):
+        """Get EinTzofia manifest from legacy server manager."""
+        try:
+            return self.legacy_server.get_eintzofia_manifest()
+        except Exception as e:
+            self.logger.error(f"Failed to get EinTzofia manifest: {e}")
+            return None
+    
+

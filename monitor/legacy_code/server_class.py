@@ -7,6 +7,7 @@ import traceback
 import pandas as pd
 import shutil
 import pickle
+import json
 from datetime import datetime
 import sys
 import ctypes
@@ -32,13 +33,18 @@ class ServerManager:
         self.os_manager = os_manager
         #check if ran as unfrozen code
         #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
-        #self.base_url = 'http://127.0.0.1:5001'
+        # local
+        self.base_url = 'http://127.0.0.1:5001'
         #else:
-        #    self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
 
+        # server
+        # self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
+
+        # server_dan
         #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
         
-        self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
+        # dev server_dan
+        #self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
     
     def upload_configuration(self):
         temp_dir_path = self.parent.osManager.get_temp_dir_path()
@@ -596,6 +602,36 @@ class ServerManager:
             
         return None
 
+    def get_eintzofia_manifest(self):
+        """
+        Retrieves the EinTzofia manifest from the server.
+        
+        Returns:
+            dict or None: Manifest data if successful, None if failed
+        """
+        url = f"{self.base_url}/get_eintzofia_manifest"
+        
+        try:
+            print("DEBUG: Requesting EinTzofia manifest from server")
+            response = requests.get(url, timeout=30)
+            
+            if response.status_code == 200:
+                manifest_data = response.json()
+                print(f"DEBUG: Successfully retrieved EinTzofia manifest")
+                return manifest_data
+            else:
+                print(f"DEBUG: Failed to get EinTzofia manifest. Status code: {response.status_code}")
+                print(f"DEBUG: Response: {response.text}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            print(f"DEBUG: Request exception in get_eintzofia_manifest: {e}")
+            return None
+        except Exception as e:
+            print(f"DEBUG: Exception in get_eintzofia_manifest: {e}")
+            traceback.print_exc()
+            return None
+
     def download_logs_from_server(self, device_id):
         """
         Downloads log file for a specific device from the server.
@@ -745,13 +781,374 @@ class ServerManager:
             print(f"DEBUG: Exception in download_encrypted_model: {e}")
             traceback.print_exc()
             return False
+
+    def get_eintzofia_manifest(self):
+        """
+        Retrieves the EinTzofia manifest from the server.
+        
+        Returns:
+            dict or None: Manifest data if successful, None if failed
+        """
+        url = f"{self.base_url}/get_eintzofia_manifest"
+        
+        try:
+            print("DEBUG: Requesting EinTzofia manifest from server")
+            response = requests.get(url, timeout=30)
+            
+            if response.status_code == 200:
+                manifest_data = response.json()
+                print(f"DEBUG: Successfully retrieved EinTzofia manifest")
+                return manifest_data
+            else:
+                print(f"DEBUG: Failed to get EinTzofia manifest. Status code: {response.status_code}")
+                print(f"DEBUG: Response: {response.text}")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            print(f"DEBUG: Request exception in get_eintzofia_manifest: {e}")
+            return None
+        except Exception as e:
+            print(f"DEBUG: Exception in get_eintzofia_manifest: {e}")
+            traceback.print_exc()
+            return None
+
+    def create_local_eintzofia_manifest(self):
+        """
+        Creates or updates a local manifest for EinTzofia by scanning the _internal and data folders.
+        
+        The manifest matches the server format with executable, _internal, and data sections.
+        Data folder is located inside _internal folder.
+        New items get a default version/date of "01-01-2000".
+        
+        Returns:
+            dict or None: The created/updated manifest, or None if failed
+        """
+        try:
+            print("DEBUG: Creating/updating local EinTzofia manifest")
+            
+            # Get paths
+            eintzofia_root = os.path.dirname(self.parent.settings['File_Path'])
+            internal_dir = os.path.join(eintzofia_root, '_internal')
+            data_dir = os.path.join(internal_dir, 'data')  # data is inside _internal
+            
+            # Save manifest to monitor's data folder
+            monitor_base_dir = self.parent.osManager.get_monitor_dir_path()
+            monitor_data_dir = os.path.join(monitor_base_dir, 'data')
+            manifest_file = os.path.join(monitor_data_dir, 'eintzofia_manifest_local.json')
+            
+            # Default version/date for new items (January 1, 2000)
+            default_date = "01-01-2000"
+            
+            # Load existing manifest if it exists
+            existing_manifest = {}
+            if os.path.exists(manifest_file):
+                try:
+                    with open(manifest_file, 'r') as f:
+                        existing_manifest = json.load(f)
+                    print(f"DEBUG: Loaded existing manifest with {len(existing_manifest)} sections")
+                except (json.JSONDecodeError, IOError) as e:
+                    print(f"DEBUG: Error reading existing manifest, creating new one: {e}")
+                    existing_manifest = {}
+            
+            # Initialize manifest structure
+            manifest = {
+                "executable": [],
+                "_internal": [],
+                "data": []
+            }
+            
+            # Helper function to create manifest entry
+            def create_entry(name, existing_items):
+                """Create manifest entry, preserving existing date or using default"""
+                existing_entry = next((item for item in existing_items if item.get('name') == name), None)
+                
+                if existing_entry:
+                    date = existing_entry.get('date', default_date)
+                    return {
+                        "name": name,
+                        "version": date,
+                        "date": date
+                    }
+                else:
+                    print(f"DEBUG: New item found: {name}, assigning default date {default_date}")
+                    return {
+                        "name": name,
+                        "version": default_date,
+                        "date": default_date
+                    }
+            
+            # Scan _internal folder (excluding data subfolder)
+            print(f"DEBUG: Scanning _internal folder: {internal_dir}")
+            existing_internal = existing_manifest.get("_internal", [])
+            
+            if os.path.exists(internal_dir):
+                try:
+                    for item in os.listdir(internal_dir):
+                        # Skip the data folder - it's handled separately
+                        if item != 'data':
+                            item_path = os.path.join(internal_dir, item)
+                            if os.path.isdir(item_path) or os.path.isfile(item_path):
+                                manifest["_internal"].append(create_entry(item, existing_internal))
+                                print(f"DEBUG: Added _internal item: {item}")
+                except Exception as e:
+                    print(f"DEBUG: Error scanning _internal directory: {e}")
+            else:
+                print(f"DEBUG: _internal directory not found: {internal_dir}")
+            
+            # Scan data folder (inside _internal)
+            print(f"DEBUG: Scanning data folder: {data_dir}")
+            existing_data = existing_manifest.get("data", [])
+            
+            if os.path.exists(data_dir):
+                try:
+                    for item in os.listdir(data_dir):
+                        item_path = os.path.join(data_dir, item)
+                        if os.path.isdir(item_path) or os.path.isfile(item_path):
+                            manifest["data"].append(create_entry(item, existing_data))
+                            print(f"DEBUG: Added data item: {item}")
+                except Exception as e:
+                    print(f"DEBUG: Error scanning data directory: {e}")
+            else:
+                print(f"DEBUG: data directory not found: {data_dir}")
+            
+            # Save manifest to file
+            try:
+                os.makedirs(monitor_data_dir, exist_ok=True)
+                
+                with open(manifest_file, 'w') as f:
+                    json.dump(manifest, f, indent=2)
+                
+                print(f"DEBUG: Local manifest saved to: {manifest_file}")
+                print(f"DEBUG: Manifest contains: {len(manifest['executable'])} executables, "
+                      f"{len(manifest['_internal'])} _internal items, {len(manifest['data'])} data items")
+                
+            except Exception as e:
+                print(f"DEBUG: Error saving manifest file: {e}")
+                return None
+            
+            return manifest
+            
+        except Exception as e:
+            print(f"DEBUG: Exception in create_local_eintzofia_manifest: {e}")
+            traceback.print_exc()
+            return None
+
+    def update_local_manifest_item(self, section, item_name, new_version, new_date=None):
+        """
+        Updates a specific item in the local manifest with new version information.
+        
+        Args:
+            section (str): The manifest section ('executable', '_internal', or 'data')
+            item_name (str): Name of the item to update
+            new_version (str): New version to set
+            new_date (str, optional): New date to set. If None, uses new_version
+        
+        Returns:
+            bool: True if updated successfully, False if failed
+        """
+        try:
+            # Use new_version as date if not provided
+            if new_date is None:
+                new_date = new_version
+                
+            # Get manifest file path
+            monitor_base_dir = self.parent.osManager.get_monitor_dir_path()
+            monitor_data_dir = os.path.join(monitor_base_dir, 'data')
+            manifest_file = os.path.join(monitor_data_dir, 'eintzofia_manifest_local.json')
+            
+            # Load existing manifest
+            if not os.path.exists(manifest_file):
+                print(f"DEBUG: Manifest file not found: {manifest_file}")
+                return False
+                
+            with open(manifest_file, 'r') as f:
+                manifest = json.load(f)
+            
+            # Validate section
+            if section not in manifest:
+                print(f"DEBUG: Invalid section '{section}' in manifest")
+                return False
+            
+            # Find and update the item
+            item_found = False
+            for item in manifest[section]:
+                if item.get('name') == item_name:
+                    item['version'] = new_version
+                    item['date'] = new_date
+                    item_found = True
+                    print(f"DEBUG: Updated {section}/{item_name} to version {new_version}")
+                    break
+            
+            if not item_found:
+                print(f"DEBUG: Item '{item_name}' not found in section '{section}'")
+                return False
+            
+            # Save updated manifest
+            with open(manifest_file, 'w') as f:
+                json.dump(manifest, f, indent=2)
+                
+            print(f"DEBUG: Manifest updated and saved successfully")
+            return True
+            
+        except Exception as e:
+            print(f"DEBUG: Exception in update_local_manifest_item: {e}")
             traceback.print_exc()
             return False
+
+    def compare_eintzofia_manifests(self, server_manifest, local_manifest):
+        """
+        Compares server and local EinTzofia manifests to find items that need updating.
+        
+        Args:
+            server_manifest (dict): Manifest from server
+            local_manifest (dict): Local manifest
+            
+        Returns:
+            dict: Dictionary containing items that need updates, organized by section
+        """
+        try:
+            print("DEBUG: Comparing server and local manifests")
+            
+            if not server_manifest or not local_manifest:
+                print("DEBUG: Missing manifest data - server or local manifest is None")
+                return None
+            
+            # Extract the actual manifest data from server response if needed
+            if 'manifest' in server_manifest:
+                server_data = server_manifest['manifest']
+                print("DEBUG: Extracting manifest from server response")
+            else:
+                server_data = server_manifest
+                print("DEBUG: Using server manifest directly")
+            
+            print(f"DEBUG: Server manifest keys: {list(server_data.keys())}")
+            print(f"DEBUG: Local manifest keys: {list(local_manifest.keys())}")
+            
+            # Initialize result dictionary
+            updates_needed = {
+                "_internal": [],
+                "data": []
+            }
+            
+            # Helper function to parse date strings for comparison
+            def parse_date(date_string):
+                """Parse date string in DD-MM-YYYY format to datetime object"""
+                try:
+                    return datetime.strptime(date_string, "%d-%m-%Y")
+                except ValueError:
+                    try:
+                        # Try DD-MM-YY format
+                        return datetime.strptime(date_string, "%d-%m-%y")
+                    except ValueError:
+                        print(f"DEBUG: Could not parse date: {date_string}")
+                        return datetime.min
+            
+            # Compare each section
+            for section in ["_internal", "data"]:
+                if section not in server_data:
+                    print(f"DEBUG: Section '{section}' not found in server manifest")
+                    continue
+                    
+                if section not in local_manifest:
+                    print(f"DEBUG: Section '{section}' not found in local manifest")
+                    continue
+                
+                print(f"DEBUG: Comparing {section} section")
+                
+                # Create lookup dictionary for local items
+                local_items = {item['name']: item for item in local_manifest[section]}
+                
+                # Check each server item
+                for server_item in server_data[section]:
+                    server_name = server_item.get('name')
+                    server_date = server_item.get('date')
+                    server_version = server_item.get('version')
+                    
+                    if not server_name or not server_date:
+                        print(f"DEBUG: Invalid server item - missing name or date: {server_item}")
+                        continue
+                    
+                    # Check if item exists locally
+                    local_item = local_items.get(server_name)
+                    
+                    if not local_item:
+                        # Item not found locally - needs download
+                        print(f"DEBUG: Item '{server_name}' not found in local {section}")
+                        updates_needed[section].append({
+                            'name': server_name,
+                            'reason': 'missing_locally',
+                            'server_version': server_version,
+                            'server_date': server_date,
+                            'local_version': None,
+                            'local_date': None
+                        })
+                        continue
+                    
+                    # Item exists locally - compare dates
+                    local_date = local_item.get('date')
+                    local_version = local_item.get('version')
+                    
+                    if not local_date:
+                        print(f"DEBUG: Local item '{server_name}' has no date - needs update")
+                        updates_needed[section].append({
+                            'name': server_name,
+                            'reason': 'missing_local_date',
+                            'server_version': server_version,
+                            'server_date': server_date,
+                            'local_version': local_version,
+                            'local_date': local_date
+                        })
+                        continue
+                    
+                    # Compare dates
+                    server_datetime = parse_date(server_date)
+                    local_datetime = parse_date(local_date)
+                    
+                    if server_datetime > local_datetime:
+                        print(f"DEBUG: Item '{server_name}' is newer on server ({server_date} > {local_date})")
+                        updates_needed[section].append({
+                            'name': server_name,
+                            'reason': 'newer_version_available',
+                            'server_version': server_version,
+                            'server_date': server_date,
+                            'local_version': local_version,
+                            'local_date': local_date
+                        })
+                    else:
+                        print(f"DEBUG: Item '{server_name}' is up to date (local: {local_date}, server: {server_date})")
+            
+            # Print summary
+            total_updates = len(updates_needed["_internal"]) + len(updates_needed["data"])
+            
+            if total_updates > 0:
+                print(f"\nDEBUG: === MANIFEST COMPARISON SUMMARY ===")
+                print(f"DEBUG: Total items needing updates: {total_updates}")
+                
+                if updates_needed["_internal"]:
+                    print(f"DEBUG: _internal items needing updates: {len(updates_needed['_internal'])}")
+                    for item in updates_needed["_internal"]:
+                        print(f"DEBUG:   - {item['name']} ({item['reason']})")
+                
+                if updates_needed["data"]:
+                    print(f"DEBUG: data items needing updates: {len(updates_needed['data'])}")
+                    for item in updates_needed["data"]:
+                        print(f"DEBUG:   - {item['name']} ({item['reason']})")
+                
+                print(f"DEBUG: =====================================\n")
+            else:
+                print("DEBUG: All items are up to date - no updates needed")
+            
+            return updates_needed
+            
+        except Exception as e:
+            print(f"DEBUG: Exception in compare_eintzofia_manifests: {e}")
+            traceback.print_exc()
+            return None
 
 if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
     #server.send_email_debug()
-    server.set_download_files(locations=["Kfar Glikson South"], eintzofia_download=False,monitor_download=True, model_download=False)
+    server.set_download_files(locations=["Nahshonim 2-6"], eintzofia_download=False,monitor_download=False, model_download=True)
 
     
