@@ -19,7 +19,8 @@
     "decision_cycle_seconds": "30",
     "enable_device_failure_emails": true,
     "enable_restart_emails": true,
-    "pending_restart_after_update": false
+    "pending_restart_after_update": false,
+    "process_manifest_on_startup": false
   },
   "devices": {
     "relay_fail_threshold": "30",

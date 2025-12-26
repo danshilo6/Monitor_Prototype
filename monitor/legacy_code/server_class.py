@@ -424,6 +424,10 @@ class ServerManager:
                         # Delete the zip file after extraction to clean up
                         self.parent.osManager.delete_file(zip_path)
                         
+                        # Set flag for manifest processing on next startup
+                        print("DEBUG: Setting manifest processing flag for next startup")
+                        self._set_manifest_processing_flag()
+                        
                         # Restart the PC to apply changes
                         #   self.parent.osManager.restart_pc()
                         return True
@@ -1145,10 +1149,208 @@ class ServerManager:
             traceback.print_exc()
             return None
 
+    def _set_manifest_processing_flag(self):
+        """Set config flag to process manifest on next monitor startup."""
+        try:
+            if hasattr(self.parent, 'config_service') and self.parent.config_service:
+                self.parent.config_service.set("system", "process_manifest_on_startup", True)
+                print("DEBUG: Manifest processing flag set in config")
+                return True
+            else:
+                print("DEBUG: No config service available to set manifest flag")
+                return False
+        except Exception as e:
+            print(f"DEBUG: Error setting manifest processing flag: {e}")
+            return False
+
+    def process_manifest_updates(self):
+        """
+        Process manifest updates by comparing server vs local and downloading needed files.
+        Called on startup when manifest processing flag is set.
+        
+        Returns:
+            bool: True if processing completed successfully, False otherwise
+        """
+        try:
+            print("DEBUG: Starting manifest processing...")
+            
+            # Step 1: Get server manifest
+            server_manifest = self.get_eintzofia_manifest()
+            if not server_manifest:
+                print("DEBUG: Failed to get server manifest")
+                return False
+            
+            # Step 2: Create/update local manifest
+            local_manifest = self.create_local_eintzofia_manifest()
+            if not local_manifest:
+                print("DEBUG: Failed to create local manifest")
+                return False
+            
+            # Step 3: Compare manifests to find updates needed
+            updates_needed = self.compare_eintzofia_manifests(server_manifest, local_manifest)
+            if not updates_needed:
+                print("DEBUG: Manifest comparison failed")
+                return False
+            
+            # Step 4: Download and update files that need updating
+            total_updates = len(updates_needed["_internal"]) + len(updates_needed["data"])
+            if total_updates == 0:
+                print("DEBUG: No manifest updates needed")
+                return True
+            
+            print(f"DEBUG: Processing {total_updates} manifest updates...")
+            successful_updates = 0
+            
+            # Process _internal updates
+            for item in updates_needed["_internal"]:
+                if self._download_and_update_manifest_item("_internal", item):
+                    successful_updates += 1
+            
+            # Process data updates  
+            for item in updates_needed["data"]:
+                if self._download_and_update_manifest_item("data", item):
+                    successful_updates += 1
+            
+            print(f"DEBUG: Manifest processing completed: {successful_updates}/{total_updates} updates successful")
+            return successful_updates == total_updates
+            
+        except Exception as e:
+            print(f"DEBUG: Exception in process_manifest_updates: {e}")
+            traceback.print_exc()
+            return False
+
+    def _download_and_update_manifest_item(self, section, item_info):
+        """
+        Download a specific manifest item and update the local manifest.
+        
+        Args:
+            section (str): '_internal' or 'data'
+            item_info (dict): Item information from manifest comparison
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            item_name = item_info['name']
+            server_version = item_info['server_version']
+            
+            print(f"DEBUG: Downloading {section}/{item_name}...")
+            
+            # Download the file using the server's download endpoint
+            success = self._download_manifest_file(section, item_name)
+            
+            if success:
+                # Update local manifest with new version
+                self.update_local_manifest_item(section, item_name, server_version)
+                print(f"DEBUG: Successfully updated {section}/{item_name}")
+                return True
+            else:
+                print(f"DEBUG: Failed to download {section}/{item_name}")
+                return False
+                
+        except Exception as e:
+            print(f"DEBUG: Exception downloading {section}/{item_name}: {e}")
+            return False
+
+    def _download_manifest_file(self, section, item_name):
+        """
+        Download a specific file from the server using chunked download.
+        
+        Args:
+            section (str): '_internal' or 'data'  
+            item_name (str): Name of the item to download
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Map section to folder parameter
+            folder = "internal" if section == "_internal" else "data"
+            
+            # Construct download URL
+            url = f"{self.base_url}/download_file"
+            params = {
+                'program': 'eintzofia',
+                'content': item_name,
+                'folder': folder
+            }
+            
+            # Enable streaming for chunked download
+            response = requests.get(url, params=params, stream=True, timeout=(10, 300))
+            response.raise_for_status()
+            
+            # Get file size from headers
+            total_size = int(response.headers.get("content-length") or 0)
+            downloaded = 0
+            next_report = 1024 * 1024  # 1MB
+            
+            # Determine save path based on section
+            eintzofia_root = os.path.dirname(self.parent.settings['File_Path'])
+            if section == "_internal":
+                save_dir = os.path.join(eintzofia_root, '_internal')
+            else:  # data
+                save_dir = os.path.join(eintzofia_root, '_internal', 'data')
+            
+            os.makedirs(save_dir, exist_ok=True)
+            zip_path = os.path.join(save_dir, f"{item_name}.zip")
+            
+            print(f"DEBUG: Downloading {item_name} ({self._format_file_size(total_size)})")
+            
+            # Download to temporary file for atomic operation
+            tmp_zip_path = zip_path + ".part"
+            
+            with open(tmp_zip_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    if downloaded >= next_report:
+                        if total_size:
+                            progress = downloaded / total_size * 100
+                            print(f"DEBUG: {progress:.1f}% ({self._format_file_size(downloaded)}/{self._format_file_size(total_size)})")
+                        else:
+                            print(f"DEBUG: Downloaded {self._format_file_size(downloaded)}")
+                        next_report += 1024 * 1024
+            
+            # Atomic file operation
+            os.replace(tmp_zip_path, zip_path)
+            
+            print(f"DEBUG: Download completed: {item_name}")
+            
+            # Validate downloaded file
+            if not zipfile.is_zipfile(zip_path):
+                print("DEBUG: Downloaded file is not a zip")
+                os.remove(zip_path)
+                return False
+            
+            # Extract zip file
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                zip_ref.extractall(save_dir)
+            
+            # Clean up zip file
+            os.remove(zip_path)
+            
+            return True
+                
+        except Exception as e:
+            print(f"DEBUG: Exception in _download_manifest_file: {e}")
+            return False
+
+    def _format_file_size(self, size_bytes):
+        """Format file size with appropriate units."""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"  
+        else:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+
 if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
     #server.send_email_debug()
-    server.set_download_files(locations=["Nahshonim 2-6"], eintzofia_download=False,monitor_download=False, model_download=True)
+    server.set_download_files(locations=["Dan's PC"], eintzofia_download=True,monitor_download=False, model_download=False)
 
     

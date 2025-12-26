@@ -716,6 +716,48 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def check_and_process_manifest_updates(config_service, server_manager) -> None:
+    """
+    Check if manifest processing is needed and process updates if flagged.
+    
+    Args:
+        config_service: Configuration service instance
+        server_manager: Server manager instance
+    """
+    logger = get_logger("monitor.gui.app")
+    
+    try:
+        # Check if manifest processing flag is set
+        process_manifest = config_service.get("system", "process_manifest_on_startup", False)
+        
+        if process_manifest:
+            logger.info("Manifest processing flag detected - processing manifest updates...")
+            print("DEBUG: Processing manifest updates on startup...")
+            
+            # Clear the flag first to prevent repeated processing
+            config_service.set("system", "process_manifest_on_startup", False)
+            logger.info("Manifest processing flag cleared")
+            
+            try:
+                success = server_manager.process_manifest_updates()
+                if success:
+                    logger.info("Manifest processing completed successfully")
+                    print("DEBUG: Manifest processing completed successfully")
+                else:
+                    logger.warning("Manifest processing failed or incomplete")
+                    print("DEBUG: Manifest processing failed or incomplete")
+            except Exception as e:
+                logger.error(f"Exception during manifest processing: {e}")
+                print(f"DEBUG: Exception during manifest processing: {e}")
+        else:
+            logger.debug("No manifest processing needed")
+            print("DEBUG: No manifest processing flag set")
+    
+    except Exception as e:
+        logger.error(f"Error checking manifest processing flag: {e}")
+        print(f"DEBUG: Error checking manifest processing flag: {e}")
+
+
 def main() -> int:
     print("Starting Monitor Application...")
 
@@ -777,6 +819,11 @@ def main() -> int:
         if not authentication:
             logger.info("Authentication failed or cancelled - exiting application")
             return 0
+
+        # ---------------------- MANIFEST PROCESSING CHECK ----------------------
+        
+        # Check and process manifest updates before starting main application
+        check_and_process_manifest_updates(config_service, server_manager)
 
         # ---------------------- AUTO-UPDATE CHECK AFTER AUTHENTICATION ----------------------
         
