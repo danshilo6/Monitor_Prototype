@@ -34,7 +34,7 @@ class ServerManager:
         #check if ran as unfrozen code
         #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
         # local
-        self.base_url = 'http://127.0.0.1:5001'
+        #self.base_url = 'http://127.0.0.1:5001'
         #else:
 
         # server
@@ -44,7 +44,7 @@ class ServerManager:
         #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
         
         # dev server_dan
-        #self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
+        self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
     
     def upload_configuration(self):
         temp_dir_path = self.parent.osManager.get_temp_dir_path()
@@ -1236,8 +1236,8 @@ class ServerManager:
             
             print(f"DEBUG: Downloading {section}/{item_name}...")
             
-            # Download the file using the server's download endpoint
-            success = self._download_manifest_file(section, item_name)
+            # Download the file using the server's download endpoint with retries
+            success = self._download_manifest_file_with_retry(section, item_name)
             
             if success:
                 # Update local manifest with new version
@@ -1251,6 +1251,42 @@ class ServerManager:
         except Exception as e:
             print(f"DEBUG: Exception downloading {section}/{item_name}: {e}")
             return False
+
+    def _download_manifest_file_with_retry(self, section, item_name, max_retries=3):
+        """
+        Download a specific file with retry logic and exponential backoff.
+        
+        Args:
+            section (str): '_internal' or 'data'
+            item_name (str): Name of the item to download
+            max_retries (int): Maximum number of retry attempts
+        
+        Returns:
+            bool: True if successful, False if all attempts failed
+        """
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    print(f"DEBUG: Download attempt {attempt + 1}/{max_retries} for {item_name}")
+                    
+                success = self._download_manifest_file(section, item_name)
+                if success:
+                    if attempt > 0:
+                        print(f"DEBUG: Download succeeded after {attempt + 1} attempts")
+                    return True
+                    
+            except Exception as e:
+                print(f"DEBUG: Download attempt {attempt + 1} failed: {e}")
+                
+            # Don't wait after the last attempt
+            if attempt < max_retries - 1:
+                # Exponential backoff: 2^attempt seconds (2, 4, 8...)
+                delay = 2 ** attempt
+                print(f"DEBUG: Retrying in {delay} seconds...")
+                time.sleep(delay)
+        
+        print(f"DEBUG: All {max_retries} download attempts failed for {item_name}")
+        return False
 
     def _download_manifest_file(self, section, item_name):
         """
