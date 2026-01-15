@@ -6,6 +6,7 @@ import threading
 from monitor.log_setup import get_logger
 from monitor.utils.path_utils import get_config_path
 
+
 class ConfigService:
     """Thread-safe service for loading and saving application settings to a JSON config file."""
 
@@ -26,6 +27,7 @@ class ConfigService:
         self.logger.info(f"Initializing config service: {config_path}")
         self._load()
         self._set_defaults_on_first_run()  # Set defaults after loading
+        self.MONITOR_VERSION = "08-01-26"
 
     def _acquire_lock(self, timeout=5):
         acquired = self._lock.acquire(timeout=timeout)
@@ -53,6 +55,9 @@ class ConfigService:
             finally:
                 self._release_lock()
 
+    def _get_monitor_version(self) -> str:
+        return self.MONITOR_VERSION
+
     def _default_config(self) -> Dict[str, Any]:
         return {
             "general": {
@@ -61,17 +66,17 @@ class ConfigService:
                 "server_url": "http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001"
             },
             "versions": {
-                "monitor_version": "08-09-25",
+                "monitor_version": self._get_monitor_version(),
                 "ein_tzofia_version": ""
             },
             "system": {
                 "enable_restart": True,
                 "minutes_to_restart": "5",
                 "restart_cooldown_minutes": "10",
-                "startup_snooze_time": "5",
+                "startup_snooze_time": "10",
                 "check_eintzofia_running": True,
                 "enable_eintzofia_auto_reopen": True,
-                "decision_cycle_seconds": "180",
+                "decision_cycle_seconds": "300",
                 "enable_device_failure_emails": True,
                 "enable_restart_emails": True
             },

@@ -332,7 +332,7 @@ class MainWindow(CustomTitleBarWindow):
         """Update the window title to include location and version information"""
         try:
             location_name = self._config_service.get("general", "location_name", "Unknown Location")
-            monitor_version = self._config_service.get("versions", "monitor_version", "Unknown")
+            monitor_version = self._config_service._get_monitor_version()
             self.set_title_with_location_and_version("Monitor", location_name, monitor_version)
             self.logger.debug(f"Updated title with location: {location_name} and version: {monitor_version}")
         except Exception as e:

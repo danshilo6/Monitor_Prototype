@@ -838,6 +838,17 @@ def main() -> int:
                 loop.close()
                 logger.info("EinTzofia auto-update download completed successfully")
                 print("DEBUG: EinTzofia auto-update download completed successfully")
+
+                restart_enabled = config_service.get("system", "enable_restart", True)
+                if restart_enabled:
+                    os_manager = OSManager(config_service)
+                    logger.info("Executing immediate restart after auto-update")
+                    print("DEBUG: Executing immediate restart after auto-update")
+                    os_manager.restart_pc()
+                else:
+                    logger.info("enable_restart is set to False - skipping immediate restart after auto-update")
+                    print("DEBUG: Skipping immediate restart after auto-update because enable_restart is False")
+
             except Exception as e:
                 logger.error(f"Failed to download EinTzofia auto-update: {e}")
                 print(f"DEBUG: Failed to download EinTzofia auto-update: {e}")

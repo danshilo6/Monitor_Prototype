@@ -129,7 +129,11 @@ class LogReader:
         """
         today = date.today()
         day_changed = self._current_day != today
-        
+        print("***************************************************************************")
+        print(f"today = {today}")
+        print(f"self._current_day = {self._current_day}")
+        print(f"day_changed = {day_changed}")
+        print("***************************************************************************")
         all_rows = []
         
         # If day changed, first read any remaining from the previous tracked day
@@ -149,6 +153,7 @@ class LogReader:
             # Reset for new day's database (IDs start from 1 again)
             self._last_id = 0
             self._current_day = today
+            self._save_state()
         
         # Read from current day's DB
         today_db_path = self._get_db_path_for_day(today)

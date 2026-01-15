@@ -8,6 +8,7 @@ import pandas as pd
 import shutil
 import pickle
 import json
+import time
 from datetime import datetime
 import sys
 import ctypes
@@ -33,18 +34,19 @@ class ServerManager:
         self.os_manager = os_manager
         #check if ran as unfrozen code
         #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
+        
         # local
         #self.base_url = 'http://127.0.0.1:5001'
         #else:
 
         # server
-        # self.base_url = 'http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000'
+        #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5000'
 
         # server_dan
-        #self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
+        self.base_url = 'http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001'
         
         # dev server_dan
-        self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
+        #self.base_url = 'http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001'
     
     def upload_configuration(self):
         temp_dir_path = self.parent.osManager.get_temp_dir_path()
@@ -818,10 +820,13 @@ class ServerManager:
 
     def create_local_eintzofia_manifest(self):
         """
-        Creates or updates a local manifest for EinTzofia by scanning the _internal and data folders.
+        Creates or updates a local manifest for EinTzofia by scanning the _internal, data, temp, icons, and styles folders.
         
-        The manifest matches the server format with executable, _internal, and data sections.
+        The manifest matches the server format with executable, _internal, data, temp, icons, and styles sections.
         Data folder is located inside _internal folder.
+        Temp folder is located inside _internal folder.
+        Icons folder is located at _internal/monitor/gui/icons.
+        Styles folder is located at _internal/monitor/gui/styles.
         New items get a default version/date of "01-01-2000".
         
         Returns:
@@ -834,6 +839,9 @@ class ServerManager:
             eintzofia_root = os.path.dirname(self.parent.settings['File_Path'])
             internal_dir = os.path.join(eintzofia_root, '_internal')
             data_dir = os.path.join(internal_dir, 'data')  # data is inside _internal
+            temp_dir = os.path.join(internal_dir, 'temp')  # temp is inside _internal
+            icons_dir = os.path.join(internal_dir, 'monitor', 'gui', 'icons')  # icons path
+            styles_dir = os.path.join(internal_dir, 'monitor', 'gui', 'styles')  # styles path
             
             # Save manifest to monitor's data folder
             monitor_base_dir = self.parent.osManager.get_monitor_dir_path()
@@ -858,7 +866,10 @@ class ServerManager:
             manifest = {
                 "executable": [],
                 "_internal": [],
-                "data": []
+                "data": [],
+                "temp": [],
+                "icons": [],
+                "styles": []
             }
             
             # Helper function to create manifest entry
@@ -881,15 +892,15 @@ class ServerManager:
                         "date": default_date
                     }
             
-            # Scan _internal folder (excluding data subfolder)
+            # Scan _internal folder (excluding data, temp, and monitor subfolders)
             print(f"DEBUG: Scanning _internal folder: {internal_dir}")
             existing_internal = existing_manifest.get("_internal", [])
             
             if os.path.exists(internal_dir):
                 try:
                     for item in os.listdir(internal_dir):
-                        # Skip the data folder - it's handled separately
-                        if item != 'data':
+                        # Skip the data, temp, and monitor folders - they're handled separately
+                        if item not in ['data', 'temp', 'monitor']:
                             item_path = os.path.join(internal_dir, item)
                             if os.path.isdir(item_path) or os.path.isfile(item_path):
                                 manifest["_internal"].append(create_entry(item, existing_internal))
@@ -915,6 +926,54 @@ class ServerManager:
             else:
                 print(f"DEBUG: data directory not found: {data_dir}")
             
+            # Scan temp folder (inside _internal)
+            print(f"DEBUG: Scanning temp folder: {temp_dir}")
+            existing_temp = existing_manifest.get("temp", [])
+            
+            if os.path.exists(temp_dir):
+                try:
+                    for item in os.listdir(temp_dir):
+                        item_path = os.path.join(temp_dir, item)
+                        if os.path.isdir(item_path) or os.path.isfile(item_path):
+                            manifest["temp"].append(create_entry(item, existing_temp))
+                            print(f"DEBUG: Added temp item: {item}")
+                except Exception as e:
+                    print(f"DEBUG: Error scanning temp directory: {e}")
+            else:
+                print(f"DEBUG: temp directory not found: {temp_dir}")
+            
+            # Scan icons folder (inside _internal/monitor/gui/icons)
+            print(f"DEBUG: Scanning icons folder: {icons_dir}")
+            existing_icons = existing_manifest.get("icons", [])
+            
+            if os.path.exists(icons_dir):
+                try:
+                    for item in os.listdir(icons_dir):
+                        item_path = os.path.join(icons_dir, item)
+                        if os.path.isdir(item_path) or os.path.isfile(item_path):
+                            manifest["icons"].append(create_entry(item, existing_icons))
+                            print(f"DEBUG: Added icons item: {item}")
+                except Exception as e:
+                    print(f"DEBUG: Error scanning icons directory: {e}")
+            else:
+                print(f"DEBUG: icons directory not found: {icons_dir}")
+            
+            # Scan styles folder (inside _internal/monitor/gui/styles)
+            print(f"DEBUG: Scanning styles folder: {styles_dir}")
+            existing_styles = existing_manifest.get("styles", [])
+            
+            if os.path.exists(styles_dir):
+                try:
+                    for item in os.listdir(styles_dir):
+                        item_path = os.path.join(styles_dir, item)
+                        if os.path.isdir(item_path) or os.path.isfile(item_path):
+                            manifest["styles"].append(create_entry(item, existing_styles))
+                            print(f"DEBUG: Added styles item: {item}")
+                except Exception as e:
+                    print(f"DEBUG: Error scanning styles directory: {e}")
+            else:
+                print(f"DEBUG: styles directory not found: {styles_dir}")
+            
             # Save manifest to file
             try:
                 os.makedirs(monitor_data_dir, exist_ok=True)
@@ -924,7 +983,9 @@ class ServerManager:
                 
                 print(f"DEBUG: Local manifest saved to: {manifest_file}")
                 print(f"DEBUG: Manifest contains: {len(manifest['executable'])} executables, "
-                      f"{len(manifest['_internal'])} _internal items, {len(manifest['data'])} data items")
+                      f"{len(manifest['_internal'])} _internal items, {len(manifest['data'])} data items, "
+                      f"{len(manifest['temp'])} temp items, {len(manifest['icons'])} icons items, "
+                      f"{len(manifest['styles'])} styles items")
                 
             except Exception as e:
                 print(f"DEBUG: Error saving manifest file: {e}")
@@ -1031,7 +1092,10 @@ class ServerManager:
             # Initialize result dictionary
             updates_needed = {
                 "_internal": [],
-                "data": []
+                "data": [],
+                "temp": [],
+                "icons": [],
+                "styles": []
             }
             
             # Helper function to parse date strings for comparison
@@ -1048,7 +1112,7 @@ class ServerManager:
                         return datetime.min
             
             # Compare each section
-            for section in ["_internal", "data"]:
+            for section in ["_internal", "data", "temp", "icons", "styles"]:
                 if section not in server_data:
                     print(f"DEBUG: Section '{section}' not found in server manifest")
                     continue
@@ -1122,7 +1186,7 @@ class ServerManager:
                         print(f"DEBUG: Item '{server_name}' is up to date (local: {local_date}, server: {server_date})")
             
             # Print summary
-            total_updates = len(updates_needed["_internal"]) + len(updates_needed["data"])
+            total_updates = len(updates_needed["_internal"]) + len(updates_needed["data"]) + len(updates_needed["temp"]) + len(updates_needed["icons"]) + len(updates_needed["styles"])
             
             if total_updates > 0:
                 print(f"\nDEBUG: === MANIFEST COMPARISON SUMMARY ===")
@@ -1136,6 +1200,21 @@ class ServerManager:
                 if updates_needed["data"]:
                     print(f"DEBUG: data items needing updates: {len(updates_needed['data'])}")
                     for item in updates_needed["data"]:
+                        print(f"DEBUG:   - {item['name']} ({item['reason']})")
+                
+                if updates_needed["temp"]:
+                    print(f"DEBUG: temp items needing updates: {len(updates_needed['temp'])}")
+                    for item in updates_needed["temp"]:
+                        print(f"DEBUG:   - {item['name']} ({item['reason']})")
+                
+                if updates_needed["icons"]:
+                    print(f"DEBUG: icons items needing updates: {len(updates_needed['icons'])}")
+                    for item in updates_needed["icons"]:
+                        print(f"DEBUG:   - {item['name']} ({item['reason']})")
+                
+                if updates_needed["styles"]:
+                    print(f"DEBUG: styles items needing updates: {len(updates_needed['styles'])}")
+                    for item in updates_needed["styles"]:
                         print(f"DEBUG:   - {item['name']} ({item['reason']})")
                 
                 print(f"DEBUG: =====================================\n")
@@ -1193,7 +1272,7 @@ class ServerManager:
                 return False
             
             # Step 4: Download and update files that need updating
-            total_updates = len(updates_needed["_internal"]) + len(updates_needed["data"])
+            total_updates = len(updates_needed["_internal"]) + len(updates_needed["data"]) + len(updates_needed["temp"]) + len(updates_needed["icons"]) + len(updates_needed["styles"])
             if total_updates == 0:
                 print("DEBUG: No manifest updates needed")
                 return True
@@ -1209,6 +1288,21 @@ class ServerManager:
             # Process data updates  
             for item in updates_needed["data"]:
                 if self._download_and_update_manifest_item("data", item):
+                    successful_updates += 1
+            
+            # Process temp updates
+            for item in updates_needed["temp"]:
+                if self._download_and_update_manifest_item("temp", item):
+                    successful_updates += 1
+            
+            # Process icons updates
+            for item in updates_needed["icons"]:
+                if self._download_and_update_manifest_item("icons", item):
+                    successful_updates += 1
+            
+            # Process styles updates
+            for item in updates_needed["styles"]:
+                if self._download_and_update_manifest_item("styles", item):
                     successful_updates += 1
             
             print(f"DEBUG: Manifest processing completed: {successful_updates}/{total_updates} updates successful")
@@ -1293,7 +1387,7 @@ class ServerManager:
         Download a specific file from the server using chunked download.
         
         Args:
-            section (str): '_internal' or 'data'  
+            section (str): '_internal', 'data', 'temp', 'icons', or 'styles'
             item_name (str): Name of the item to download
         
         Returns:
@@ -1301,7 +1395,19 @@ class ServerManager:
         """
         try:
             # Map section to folder parameter
-            folder = "internal" if section == "_internal" else "data"
+            if section == "_internal":
+                folder = "internal"
+            elif section == "data":
+                folder = "data"
+            elif section == "temp":
+                folder = "temp"
+            elif section == "icons":
+                folder = "icons"
+            elif section == "styles":
+                folder = "styles"
+            else:
+                print(f"DEBUG: Unknown section '{section}'")
+                return False
             
             # Construct download URL
             url = f"{self.base_url}/download_file"
@@ -1324,8 +1430,14 @@ class ServerManager:
             eintzofia_root = os.path.dirname(self.parent.settings['File_Path'])
             if section == "_internal":
                 save_dir = os.path.join(eintzofia_root, '_internal')
-            else:  # data
+            elif section == "data":
                 save_dir = os.path.join(eintzofia_root, '_internal', 'data')
+            elif section == "temp":
+                save_dir = os.path.join(eintzofia_root, '_internal', 'temp')
+            elif section == "icons":
+                save_dir = os.path.join(eintzofia_root, '_internal', 'monitor', 'gui', 'icons')
+            elif section == "styles":
+                save_dir = os.path.join(eintzofia_root, '_internal', 'monitor', 'gui', 'styles')
             
             os.makedirs(save_dir, exist_ok=True)
             zip_path = os.path.join(save_dir, f"{item_name}.zip")
@@ -1387,6 +1499,6 @@ if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
     #server.send_email_debug()
-    server.set_download_files(locations=["Dan's PC"], eintzofia_download=True,monitor_download=False, model_download=False)
+    server.set_download_files(locations=["Nahshonim 2-6"], eintzofia_download=False, monitor_download=True, model_download=False)
 
     

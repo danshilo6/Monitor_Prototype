@@ -6,11 +6,11 @@
     "location_extracted_from_old_settings": true
   },
   "versions": {
-    "monitor_version": "1.0.1",
+    "monitor_version": "02_01_25",
     "eintzofia_version": "06_12_25"
   },
   "system": {
-    "enable_restart": true,
+    "enable_restart": false,
     "minutes_to_restart": "5",
     "restart_cooldown_minutes": "2",
     "startup_snooze_time": "5",

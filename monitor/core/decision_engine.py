@@ -378,10 +378,24 @@ class DecisionEngine(QObject):
         try:
             # Get all current device statuses from the database
             devices = self.devices_db.get_all()
-            self.logger.debug(f"Evaluating {len(devices)} devices")
+            self.logger.debug(f"Found {len(devices)} total devices")
             
-            # Evaluate each device and process the result
+            # Filter out devices with no device type or unknown device type
+            valid_devices = {}
             for device_id, device_info in devices.items():
+                device_type = device_info.device_type
+                
+                # Skip devices with empty, None, or 'unknown' device type
+                if not device_type or device_type.strip() == '' or device_type.lower() == 'unknown':
+                    self.logger.debug(f"Ignoring device {device_id} - no valid device type (type: '{device_type}')")
+                    continue
+                
+                valid_devices[device_id] = device_info
+            
+            self.logger.debug(f"Evaluating {len(valid_devices)} devices with valid device types")
+            
+            # Evaluate each valid device and process the result
+            for device_id, device_info in valid_devices.items():
                 self._ensure_device_tracked(device_info) # Adds the device to the json file
                 self._evaluate_and_process_device(device_info)
 
