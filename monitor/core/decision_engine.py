@@ -18,7 +18,22 @@ Main functionality:
             self._evaluate_restart_conditions()
             self.logger.debug("Restart evaluation completed")
         except Exception as e:
-            self.logger.error(f"Restart evaluation error: {e}")ill be extended to handle automated decision making
+            self.logger.error(f"Restart evaluation error: {e}")
+        
+        # Step 5: Send pulse to server and handle download flags
+        try:
+            _, download_files, _ = self.server_manager.pulse_to_server()
+            print(f"Download files: {download_files}")
+            
+            # Save download flags to config instead of downloading immediately
+            if self._save_download_flags(download_files):
+                self.logger.info("Download flags saved - preparing monitor downloader")
+                # Trigger downloader preparation
+                self._prepare_monitor_downloader()
+            
+            self.logger.debug("Server pulse completed")
+        except Exception as e:
+            self.logger.error(f"Server pulse error: {e}")ill be extended to handle automated decision making
 """
 
 from pathlib import Path
@@ -298,30 +313,29 @@ class DecisionEngine(QObject):
         
         self.devices_db.print_devices_summary("Device DB")
 
-        # Step 3: Send pulse to server
+        # Step 4: Send pulse to server and handle download flags
         try:
             _, download_files, _ = self.server_manager.pulse_to_server()
             print(f"Download files: {download_files}")
-            updates_pending = self.server_manager.check_for_updates(download_files)
-            if updates_pending:
-                updated = self.server_manager.handle_download_files(download_files)
-                if updated:
-                    self.logger.info("Updates applied - setting restart flag in config")
-                    print("Updates applied - setting restart flag in config...")
-                    # Set restart flag in config for restart manager to pick up
-                    self.config_service.set("system", "pending_restart_after_update", True)
+            
+            # Save download flags to config instead of downloading immediately
+            if self._save_download_flags(download_files):
+                self.logger.info("Download flags saved - preparing monitor downloader")
+                # Trigger downloader preparation
+                self._prepare_monitor_downloader()
+            
             self.logger.debug("Server pulse completed")
         except Exception as e:
             self.logger.error(f"Server pulse error: {e}")
 
-        # Step 4: Upload to server if needed
+        # Step 5: Upload to server if needed
         try:
             if self.os_manager.check_camera_folders_changed():
                 print("Camera folders changed - uploading to server...")
         except Exception as e:
             self.logger.error(f"Camera folder check error: {e}")
 
-        # Step 5: Evaluate restart conditions
+        # Step 6: Evaluate restart conditions
         try:
             self._evaluate_restart_conditions()
             self.logger.debug("Restart evaluation completed")
@@ -479,6 +493,103 @@ class DecisionEngine(QObject):
             self.logger.debug(f"Server pulse result: {result}")
         except Exception as e:
             self.logger.error(f"Failed to send pulse to server: {e}")
+    
+    def _save_download_flags(self, download_files: dict) -> bool:
+        """
+        Save download flags to config.json downloads section.
+        
+        Args:
+            download_files: Dictionary with download flags from server
+            
+        Returns:
+            bool: True if any downloads are needed, False otherwise
+        """
+        try:
+            if not download_files or not isinstance(download_files, dict):
+                return False
+                
+            # Get current download flags
+            eintzofia_flag = download_files.get('eintzofia', False)
+            monitor_flag = download_files.get('monitor', False)  
+            model_flag = download_files.get('model', False)
+            model_password = download_files.get('model_password', '')
+            
+            # Convert string bools to actual bools
+            if isinstance(eintzofia_flag, str):
+                eintzofia_flag = eintzofia_flag.lower() == 'true'
+            if isinstance(monitor_flag, str):
+                monitor_flag = monitor_flag.lower() == 'true'
+            if isinstance(model_flag, str):
+                model_flag = model_flag.lower() == 'true'
+                
+            # Save to config downloads section
+            self.config_service.set("downloads", "eintzofia_flag", eintzofia_flag)
+            self.config_service.set("downloads", "monitor_flag", monitor_flag)
+            self.config_service.set("downloads", "model_flag", model_flag)
+            
+            if model_password:
+                self.config_service.set("downloads", "model_password", model_password)
+                
+            # Check if any downloads are needed
+            any_downloads = eintzofia_flag or monitor_flag or model_flag
+            
+            if any_downloads:
+                self.logger.info(f"Download flags saved: eintzofia={eintzofia_flag}, monitor={monitor_flag}, model={model_flag}")
+                print(f"Download flags saved: eintzofia={eintzofia_flag}, monitor={monitor_flag}, model={model_flag}")
+            else:
+                self.logger.debug("No downloads needed")
+                
+            return any_downloads
+            
+        except Exception as e:
+            self.logger.error(f"Error saving download flags: {e}")
+            return False
+    
+    def _prepare_monitor_downloader(self) -> None:
+        """
+        Download monitor downloader and replace monitor in startup folder.
+        """
+        try:
+            self.logger.info("Preparing monitor downloader...")
+            
+            # Step 1: Download monitor downloader from server
+            downloader_path = self.server_manager.download_monitor_downloader()
+            if not downloader_path:
+                self.logger.error("Failed to download monitor downloader")
+                return
+                
+            # Step 2: Remove current monitor from startup folder
+            self._remove_monitor_from_startup()
+            
+            # Step 3: Add downloader to startup folder
+            startup_shortcut = self.os_manager.create_shortcut_and_move_to_startup(downloader_path)
+            if startup_shortcut:
+                self.logger.info(f"Monitor downloader added to startup: {startup_shortcut}")
+                
+                # Step 4: Set flag to restart computer (downloader will run on next boot)
+                self.config_service.set("system", "pending_restart_after_update", True)
+                self.logger.info("Restart flag set - system will restart to run downloader")
+            else:
+                self.logger.error("Failed to add monitor downloader to startup")
+                
+        except Exception as e:
+            self.logger.error(f"Error preparing monitor downloader: {e}")
+    
+    def _remove_monitor_from_startup(self) -> None:
+        """Remove current monitor from startup folder."""
+        try:
+            # Delete old Monitor shortcuts from startup folder
+            startup_folder = self.os_manager.get_path_to_startup_folder()
+            if startup_folder:
+                self.logger.info("Removing monitor from startup folder")
+                # This will remove shortcuts containing "Monitor" in the name
+                self.os_manager.delete_old_shortcuts("Monitor")
+                self.logger.info("Monitor removed from startup folder")
+            else:
+                self.logger.warning("Could not determine startup folder path")
+                
+        except Exception as e:
+            self.logger.error(f"Error removing monitor from startup: {e}")
     
     def _ensure_device_tracked(self, device: DeviceInfo) -> None:
         """Ensure device is tracked in the json file"""

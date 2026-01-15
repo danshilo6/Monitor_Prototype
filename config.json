@@ -33,5 +33,10 @@
   },
   "notifications": {
     "phone_number": ""
+  },
+  "downloads": {
+    "eintzofia_flag": false,
+    "monitor_flag": false,
+    "model_flag": false
   }
 }

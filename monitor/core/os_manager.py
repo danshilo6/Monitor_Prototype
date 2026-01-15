@@ -273,6 +273,10 @@ class OSManager:
         """Close then open file using legacy implementation."""
         return self.legacy_os.close_then_open_file(file_path)
     
+    def get_path_to_startup_folder(self):
+        """Get the startup folder path (wrapper for legacy method)."""
+        return self.legacy_os.get_path_to_startup_folder()
+    
     def check_camera_folders_changed(self):
         """
         Check if any camera folders in EinTzofia's _internal/temp directory have changed.

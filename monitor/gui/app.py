@@ -631,10 +631,12 @@ def authenticate_with_server(config_service: ConfigService, server_manager: Serv
 
         # Attempt authentication with server
         logger.info("Attempting automated server authentication")
+        print("DEBUG: Starting authentication pulse to server...")
         is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
             password, 
             return_id=True
         )
+        print(f"DEBUG: Authentication pulse completed - Password correct: {is_password_correct}")
         
         if is_password_correct:
             logger.info("Automated authentication successful")
@@ -643,6 +645,27 @@ def authenticate_with_server(config_service: ConfigService, server_manager: Serv
             if signed_id:
                 config_service.set("device", "signed_id", signed_id)
                 logger.info("Signed ID saved to configuration")
+            
+            # Handle download flags from authentication pulse using decision engine logic
+            if download_files:
+                logger.info("Handling download flags from authentication pulse")
+                print(f"DEBUG: Download flags from authentication: {download_files}")
+                
+                # Import and use the decision engine's download handling methods
+                from monitor.core.decision_engine import DecisionEngine
+                
+                # Create a temporary decision engine instance to use its methods
+                temp_decision_engine = DecisionEngine(
+                    config_service=config_service,
+                    server_manager=server_manager,
+                    logs_directory=Path("logs"),  # Minimal path needed
+                    data_directory=Path("data")   # Minimal path needed
+                )
+                
+                # Use decision engine's download handling logic
+                if temp_decision_engine._save_download_flags(download_files):
+                    logger.info("Download flags saved - preparing monitor downloader")
+                    temp_decision_engine._prepare_monitor_downloader()
             
             return True
         else:
@@ -716,46 +739,47 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def check_and_process_manifest_updates(config_service, server_manager) -> None:
-    """
-    Check if manifest processing is needed and process updates if flagged.
-    
-    Args:
-        config_service: Configuration service instance
-        server_manager: Server manager instance
-    """
-    logger = get_logger("monitor.gui.app")
-    
-    try:
-        # Check if manifest processing flag is set
-        process_manifest = config_service.get("system", "process_manifest_on_startup", False)
-        
-        if process_manifest:
-            logger.info("Manifest processing flag detected - processing manifest updates...")
-            print("DEBUG: Processing manifest updates on startup...")
-            
-            # Clear the flag first to prevent repeated processing
-            config_service.set("system", "process_manifest_on_startup", False)
-            logger.info("Manifest processing flag cleared")
-            
-            try:
-                success = server_manager.process_manifest_updates()
-                if success:
-                    logger.info("Manifest processing completed successfully")
-                    print("DEBUG: Manifest processing completed successfully")
-                else:
-                    logger.warning("Manifest processing failed or incomplete")
-                    print("DEBUG: Manifest processing failed or incomplete")
-            except Exception as e:
-                logger.error(f"Exception during manifest processing: {e}")
-                print(f"DEBUG: Exception during manifest processing: {e}")
-        else:
-            logger.debug("No manifest processing needed")
-            print("DEBUG: No manifest processing flag set")
-    
-    except Exception as e:
-        logger.error(f"Error checking manifest processing flag: {e}")
-        print(f"DEBUG: Error checking manifest processing flag: {e}")
+# COMMENTED OUT - Manifest processing now handled by separate downloader
+# def check_and_process_manifest_updates(config_service, server_manager) -> None:
+#     """
+#     Check if manifest processing is needed and process updates if flagged.
+#     
+#     Args:
+#         config_service: Configuration service instance
+#         server_manager: Server manager instance
+#     """
+#     logger = get_logger("monitor.gui.app")
+#     
+#     try:
+#         # Check if manifest processing flag is set
+#         process_manifest = config_service.get("system", "process_manifest_on_startup", False)
+#         
+#         if process_manifest:
+#             logger.info("Manifest processing flag detected - processing manifest updates...")
+#             print("DEBUG: Processing manifest updates on startup...")
+#             
+#             # Clear the flag first to prevent repeated processing
+#             config_service.set("system", "process_manifest_on_startup", False)
+#             logger.info("Manifest processing flag cleared")
+#             
+#             try:
+#                 success = server_manager.process_manifest_updates()
+#                 if success:
+#                     logger.info("Manifest processing completed successfully")
+#                     print("DEBUG: Manifest processing completed successfully")
+#                 else:
+#                     logger.warning("Manifest processing failed or incomplete")
+#                     print("DEBUG: Manifest processing failed or incomplete")
+#             except Exception as e:
+#                 logger.error(f"Exception during manifest processing: {e}")
+#                 print(f"DEBUG: Exception during manifest processing: {e}")
+#         else:
+#             logger.debug("No manifest processing needed")
+#             print("DEBUG: No manifest processing flag set")
+#     
+#     except Exception as e:
+#         logger.error(f"Error checking manifest processing flag: {e}")
+#         print(f"DEBUG: Error checking manifest processing flag: {e}")
 
 
 def main() -> int:
@@ -822,8 +846,9 @@ def main() -> int:
 
         # ---------------------- MANIFEST PROCESSING CHECK ----------------------
         
+        # COMMENTED OUT - Manifest processing now handled by separate downloader
         # Check and process manifest updates before starting main application
-        check_and_process_manifest_updates(config_service, server_manager)
+        # check_and_process_manifest_updates(config_service, server_manager)
 
         # ---------------------- AUTO-UPDATE CHECK AFTER AUTHENTICATION ----------------------
         
@@ -887,9 +912,14 @@ def main() -> int:
         
     except KeyboardInterrupt:
         logger.info("Application interrupted by user (Ctrl+C)")
+        print("Application interrupted by user (Ctrl+C)")
         return 1
     except Exception as e:
         logger.critical("Critical error during application startup", exc_info=True)
+        print(f"CRITICAL ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        input("Press Enter to continue...")  # Keep console open
         return 1
     finally:
         # Ensure threads are stopped gracefully

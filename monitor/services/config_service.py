@@ -88,6 +88,12 @@ class ConfigService:
             },
             "device": {
                 "signed_id": ""
+            },
+            "downloads": {
+                "eintzofia_flag": False,
+                "monitor_flag": False,
+                "model_flag": False,
+                "model_password": ""
             }
         }
 

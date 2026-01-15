@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 from monitor.log_setup import get_logger
 
@@ -23,9 +24,15 @@ class MockParentForServer:
             'Phone_Number': self._get_phone_number()
         }
         
-        # Version and restart settings
-        self.VERSION = self._get_version()
-        self.enable_pc_restart = self._get_restart_setting()
+        # Provide both versions separately for server pulse
+        self.MONITOR_VERSION = self._get_monitor_version()
+        self.EINTZOFIA_VERSION = self._get_eintzofia_version()
+        
+        # Legacy VERSION field (keeping for backwards compatibility)
+        self.VERSION = self.MONITOR_VERSION
+        
+        # Legacy restart setting
+        self.restart_enabled = self._get_restart_setting()
     
 
     def _get_location(self):
@@ -46,10 +53,16 @@ class MockParentForServer:
             return self.config_service.get("notifications", "phone_number", "")
         return ""
     
-    def _get_version(self):
-        """Get application version."""
+    def _get_monitor_version(self):
+        """Get monitor version from config service method."""
         if self.config_service:
-            return self.config_service.get("general", "version", "1.0.0")
+            return self.config_service._get_monitor_version()
+        return "1.0.0"
+    
+    def _get_eintzofia_version(self):
+        """Get eintzofia version from config."""
+        if self.config_service:
+            return self.config_service.get("versions", "ein_tzofia_version", "1.0.0")
         return "1.0.0"
     
     def _get_restart_setting(self):
@@ -398,6 +411,33 @@ class ServerManager:
             return self.legacy_server.process_manifest_updates()
         except Exception as e:
             self.logger.error(f"Failed to process manifest updates: {e}")
-            return False
-    
+            return False    
+    def download_monitor_downloader(self) -> str:
+        """
+        Download monitor downloader from server.
+        
+        Returns:
+            str: Path to downloaded downloader executable, or None if failed
+        """
+        try:
+            self.logger.info("Downloading monitor downloader from server")
+            
+            # Get download path (save to monitor directory)
+            monitor_dir = self.os_manager.get_monitor_dir_path()
+            downloader_filename = "monitor_downloader.exe" if self.os_manager.current_os == "Windows" else "monitor_downloader"
+            downloader_path = os.path.join(monitor_dir, downloader_filename)
+            
+            # Download from server using the legacy implementation
+            success = self.legacy_server.download_monitor_downloader(downloader_path)
+            
+            if success and os.path.exists(downloader_path):
+                self.logger.info(f"Monitor downloader downloaded successfully: {downloader_path}")
+                return downloader_path
+            else:
+                self.logger.error("Monitor downloader download failed")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error downloading monitor downloader: {e}")
+            return None    
 

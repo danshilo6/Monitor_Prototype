@@ -93,9 +93,18 @@ class ServerManager:
         location = self.parent.settings['Location']
         device_id = self.parent.osManager.generate_device_id()
         print(f'Pulsing to server {self.base_url} for PC ID: {device_id}')
+        print(f'DEBUG: Sending monitor_version: {self.parent.MONITOR_VERSION}')
+        print(f'DEBUG: Sending eintzofia_version: {self.parent.EINTZOFIA_VERSION}')
         
         try:
-            response = requests.post(server_url, json={'location':location,'password':password,'device_id':device_id,'return_ID':return_ID,'version':self.parent.VERSION}, timeout=30)
+            response = requests.post(server_url, json={
+                'location': location,
+                'password': password,
+                'device_id': device_id,
+                'return_ID': return_ID,
+                'monitor_version': self.parent.MONITOR_VERSION,
+                'eintzofia_version': self.parent.EINTZOFIA_VERSION
+            }, timeout=30)
             data = response.json()
             if response.status_code == 200:
                 print(f'Pulse sent successfully for {location}')
@@ -1494,6 +1503,60 @@ class ServerManager:
             return f"{size_bytes / 1024:.1f} KB"  
         else:
             return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+    def download_monitor_downloader(self, save_path):
+        """
+        Download monitor downloader from server.
+        
+        Args:
+            save_path: Full path where to save the downloader executable
+            
+        Returns:
+            bool: True if download successful, False otherwise
+        """
+        url = f"{self.base_url}/download_monitor_downloader"
+        
+        try:
+            print(f"DEBUG: Downloading monitor downloader from {url}")
+            response = requests.get(url, stream=True, timeout=(10, 300))  # 10s connect, 5min total
+            response.raise_for_status()
+            
+            # Get file size from headers for progress tracking
+            total_size = int(response.headers.get("content-length") or 0)
+            downloaded = 0
+            
+            print(f"DEBUG: Downloading monitor downloader ({self._format_file_size(total_size)})")
+            
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            
+            # Download with progress tracking
+            with open(save_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    # Log progress every MB
+                    if total_size and downloaded % (1024 * 1024) == 0:
+                        progress = downloaded / total_size * 100
+                        print(f"DEBUG: Download progress: {progress:.1f}% ({self._format_file_size(downloaded)}/{self._format_file_size(total_size)})")
+            
+            # Make executable on Linux/Unix systems
+            if not sys.platform.startswith("win"):
+                import stat
+                os.chmod(save_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+            
+            print(f"DEBUG: Monitor downloader saved to: {save_path}")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            print(f"DEBUG: Request error downloading monitor downloader: {e}")
+            return False
+        except Exception as e:
+            print(f"DEBUG: Error downloading monitor downloader: {e}")
+            return False
 
 if __name__ == '__main__':
     OS_manager = os_manager()
