@@ -2,41 +2,38 @@
   "general": {
     "location_name": "Dan's PC",
     "eintzofia_path": "C:\\Users\\dansh\\github\\EinTzofia\\EinTzofia_06_12_25.exe",
-    "server_url": "http://ec2-13-53-187-0.eu-north-1.compute.amazonaws.com:5001",
+    "server_url": "http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001",
     "location_extracted_from_old_settings": true
   },
   "versions": {
-    "monitor_version": "02_01_25",
+    "monitor_version": "08-01-26",
+    "ein_tzofia_version": "",
     "eintzofia_version": "06_12_25"
   },
   "system": {
-    "enable_restart": false,
+    "enable_restart": true,
     "minutes_to_restart": "5",
-    "restart_cooldown_minutes": "2",
-    "startup_snooze_time": "5",
+    "restart_cooldown_minutes": "10",
+    "startup_snooze_time": "10",
     "check_eintzofia_running": true,
     "enable_eintzofia_auto_reopen": true,
-    "decision_cycle_seconds": "30",
+    "decision_cycle_seconds": "300",
     "enable_device_failure_emails": true,
-    "enable_restart_emails": true,
-    "pending_restart_after_update": false,
-    "process_manifest_on_startup": false
+    "enable_restart_emails": true
   },
   "devices": {
     "relay_fail_threshold": "30",
-    "camera_fail_threshold": "0.5",
+    "camera_fail_threshold": "0.2",
     "camera_log_minutes": "20",
     "history_length": "50"
   },
   "device": {
-    "signed_id": "7036becc052006bebe0e7734f450b5c8a7a296e680b2f28b64c5b7ae9e3ff96ae56c83ad956befc26a3033bf7268234a77768624412e64021273b5323887b44abce8c23468d08f703f43e54f954dd9d9af5ec8e3995c3c60c5cb2d63b0e9cd463ce2b17bf65058603a4a4752144f7bc4c392fb06f73a5b96f70604586b9d7728eb5985a6e9342f03a52ac55eeba18b1840ea4b63ba68f2d09bde662a44be5f2b1ad81e2c4553ba948695abefab1b08a57faa5e05822b9f15e3a0f352f0d61054c89cbb8b6cd8f8f418b2da7c6e16e4c843e216d5d841f47f1ea9f2ad7de1b954e14364579f191742d65cc4d5e9ed2a498109591eba20a1bab31d15f0751b3846"
-  },
-  "notifications": {
-    "phone_number": ""
+    "signed_id": "1637579251531034ed30495c8cfa4ecb6b8976354c8fa543215518335f2bb42efb2874968d87be19cbe865e415c1190b15689e2564fc0e3a0b879eeae0435ee56e63d7627d83c6a6489bc85c9ca57412969e51ba82b6d6c4c24b07e333f7a4cb61326bd4011b0a83db4a3d1d9e61a916c8239c9c1d2cc4d0f6705af74dadc7485df44d8f57e0c87b524fbe42d7cc9ff036edb01c10dba9f64da82b017378d92e337ffcc56666151ac54f6a30f50f0fc9a68c4747766f18db95260a9a46ce016e9c93610e09c46689317a7ef9c1535de586392d4d03736597645f3015cccd23770bed2a0500c63660764bd3c271f64f331ebceba7b963ca9d5aad784c80dbb6f3"
   },
   "downloads": {
     "eintzofia_flag": false,
     "monitor_flag": false,
-    "model_flag": false
+    "model_flag": false,
+    "model_password": ""
   }
 }

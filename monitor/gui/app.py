@@ -832,7 +832,7 @@ def main() -> int:
         
         
         # Set server URL directly from config
-        server_url = config_service.get("general", "server_url", "http://ec2-16-171-143-39.eu-north-1.compute.amazonaws.com:5000")   
+        server_url = config_service.get("general", "server_url", "http://ec2-13-49-189-10.eu-north-1.compute.amazonaws.com:5001")   
         server_manager.update_server_url(server_url)
         print(f"Chosen server: {server_manager.legacy_server.base_url}")
         # connect to server

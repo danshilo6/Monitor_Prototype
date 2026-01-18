@@ -12,6 +12,7 @@ class ConfigService:
 
     def __init__(self, config_path: str = None):
         self.logger = get_logger("monitor.services.config_service")
+        self.MONITOR_VERSION = "08-01-26"
         
         # Use absolute path relative to executable
         if config_path is None:
@@ -27,7 +28,6 @@ class ConfigService:
         self.logger.info(f"Initializing config service: {config_path}")
         self._load()
         self._set_defaults_on_first_run()  # Set defaults after loading
-        self.MONITOR_VERSION = "08-01-26"
 
     def _acquire_lock(self, timeout=5):
         acquired = self._lock.acquire(timeout=timeout)
