@@ -242,6 +242,44 @@ def _shutdown() -> None:
 # ────────────────────────────────────────────────────────────────────────────
 # Public API
 # ────────────────────────────────────────────────────────────────────────────
+def _ensure_log_directory(preferred_dir: Path) -> Path | None:
+    """
+    Ensure a writable log directory exists, with fallbacks for permission issues.
+    
+    Args:
+        preferred_dir: The preferred log directory path
+        
+    Returns:
+        Path to a writable log directory, or None if no directory could be created
+    """
+    import tempfile
+    
+    # List of directories to try, in order of preference
+    candidates = [
+        preferred_dir,
+        Path.home() / ".local" / "share" / "monitor" / "logs",  # Linux standard
+        Path.home() / "Documents" / "monitor" / "logs",         # User documents
+        Path.home() / "monitor_logs",                           # Simple home dir
+        Path(tempfile.gettempdir()) / "monitor_logs",          # System temp dir
+    ]
+    
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            # Test if we can actually write to it
+            test_file = candidate / ".write_test"
+            test_file.write_text("test")
+            test_file.unlink()
+            return candidate
+        except (OSError, PermissionError, IOError) as e:
+            # Try next candidate
+            continue
+    
+    # No writable directory found
+    print(f"Warning: Could not create any log directory. File logging disabled.", file=sys.stderr)
+    return None
+
+
 def init_logging(
     mode: Literal["sync", "async"] = "sync",
     *,
@@ -274,16 +312,33 @@ def init_logging(
         # Resolve configuration - environment variables take precedence
         effective_level = _log_level_from_env() if "MONITOR_LOG_LEVEL" in os.environ else (level or logging.INFO)
         log_directory = _log_dir_from_env() if log_dir is None else Path(log_dir).expanduser()
-        log_directory.mkdir(parents=True, exist_ok=True)
+        
+        # Try to create log directory with fallback options
+        log_directory = _ensure_log_directory(log_directory)
+        
+        handlers: list[logging.Handler] = []
+        
+        # Create file handlers only if we have a valid log directory
+        if log_directory:
+            try:
+                app_handler = _file_handler(log_directory / "app.log", logging.INFO)      # All INFO+ messages
+                error_handler = _file_handler(log_directory / "errors.log", logging.ERROR)  # Only ERROR+ messages
+                handlers.extend([app_handler, error_handler])
+                # Only print directory info if it's not the default expected location
+                if log_directory != _log_dir_from_env() and str(log_directory) not in ["logs", "./logs"]:
+                    print(f"Using log directory: {log_directory}", file=sys.stderr)
+            except Exception as e:
+                # If file handlers fail, we'll continue with console-only logging
+                print(f"Warning: Could not create file handlers: {e}. Using console logging only.", file=sys.stderr)
 
-        # Create handlers for different log levels and outputs
-        app_handler = _file_handler(log_directory / "app.log", logging.INFO)      # All INFO+ messages
-        error_handler = _file_handler(log_directory / "errors.log", logging.ERROR)  # Only ERROR+ messages
-        handlers: list[logging.Handler] = [app_handler, error_handler]
-
-        # Add console output if requested or running in debug mode
-        if _enable_console_logging(effective_level):
+        # Add console output if requested, running in debug mode, or if file logging failed
+        if _enable_console_logging(effective_level) or not handlers:
             handlers.append(_console_handler(effective_level))
+        
+        # Ensure we have at least one handler
+        if not handlers:
+            # Fallback to basic console handler if everything else failed
+            handlers.append(_console_handler(logging.INFO))
 
         # Configure root logger
         root = logging.getLogger()

@@ -786,46 +786,80 @@ def main() -> int:
     print("Starting Monitor Application...")
 
     """Main application entry point."""
+    print("DEBUG: Parsing arguments...")
     # Parse command line arguments
     args = parse_arguments()
+    print("DEBUG: Arguments parsed successfully")
     
-    # Initialize logging first
-    init_logging(mode="sync")  # Simple synchronous logging
+    print("DEBUG: Initializing logging...")
+    # Initialize logging relative to executable location
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller executable
+        executable_dir = Path(sys.executable).parent
+    else:
+        # Running as Python script - use project root
+        executable_dir = Path(__file__).parent.parent.parent
+    
+    log_dir = executable_dir / "logs"
+    init_logging(mode="sync", log_dir=str(log_dir))
+    print("DEBUG: Logging initialized")
+    
+    print("DEBUG: Getting logger...")
     logger = get_logger("monitor.gui.app")
+    print("DEBUG: Logger obtained")
     
     logger.info("=== Monitor Application Starting ===")
     logger.info(f"Python version: {sys.version}")
     logger.info(f"PySide6 available: {QApplication is not None}")
+    print("DEBUG: Basic info logged")
     
     thread_manager = None
     
     try:
+        print("DEBUG: Setting up Qt application...")
         # Initialize Qt application
         app = setup_application()
+        print("DEBUG: Qt application setup complete")
         
+        print("DEBUG: Creating services...")
         # Initialize services
         config_service = create_services()
+        print("DEBUG: Services created")
         
+        print("DEBUG: Migrating location from old settings...")
         # Migrate location from old settings.pkl if needed
         migrate_location_from_old_settings(config_service)
+        print("DEBUG: Location migration complete")
         
+        print("DEBUG: Setting up location name...")
         # Setup location name from device ID if not configured
         setup_location_name(config_service)
+        print("DEBUG: Location name setup complete")
 
+        print("DEBUG: Setting up EinTzofia path...")
         # Setup EinTzofia path if needed
         setup_eintzofia_path(config_service)
+        print("DEBUG: EinTzofia path setup complete")
         
+        print("DEBUG: Extracting EinTzofia version...")
         # Extract EinTzofia version from executable name
         extract_eintzofia_version(config_service)
+        print("DEBUG: EinTzofia version extraction complete")
         
+        print("DEBUG: Checking EinTzofia version...")
         # Check if EinTzofia version is outdated
         need_auto_update = check_eintzofia_version_outdated(config_service)
+        print("DEBUG: EinTzofia version check complete")
         
+        print("DEBUG: Creating databases...")
         # Initialize databases
         alert_db, contact_db = create_databases()
+        print("DEBUG: Databases created")
         
+        print("DEBUG: Creating server manager...")
         # Create server manager for email/SMS services
         server_manager = create_server_manager(config_service)
+        print("DEBUG: Server manager created")
         
         # ---------------------- AUTHENTICATION BEFORE MAIN WINDOW ----------------------
         

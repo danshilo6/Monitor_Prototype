@@ -313,9 +313,19 @@ class DecisionEngine(QObject):
         
         self.devices_db.print_devices_summary("Device DB")
 
-        # Step 4: Send pulse to server and handle download flags
+        # Step 4: Send pulse to server with all devices and restart history
         try:
-            _, download_files, _ = self.server_manager.pulse_to_server()
+            # Gather all devices data (not just failed ones)
+            all_devices = self._get_all_devices_for_server()
+            
+            # Gather restart history data  
+            restart_history = self._get_restart_history_for_server()
+            
+            # Send pulse with data
+            _, download_files, _ = self.server_manager.pulse_to_server(
+                devices=all_devices,
+                restart_history=restart_history
+            )
             print(f"Download files: {download_files}")
             
             # Save download flags to config instead of downloading immediately
@@ -578,15 +588,38 @@ class DecisionEngine(QObject):
     def _remove_monitor_from_startup(self) -> None:
         """Remove current monitor from startup folder."""
         try:
-            # Delete old Monitor shortcuts from startup folder
             startup_folder = self.os_manager.get_path_to_startup_folder()
-            if startup_folder:
-                self.logger.info("Removing monitor from startup folder")
-                # This will remove shortcuts containing "Monitor" in the name
-                self.os_manager.delete_old_shortcuts("Monitor")
-                self.logger.info("Monitor removed from startup folder")
-            else:
+            if not startup_folder:
                 self.logger.warning("Could not determine startup folder path")
+                return
+                
+            self.logger.info("Removing monitor from startup folder")
+            
+            # Remove both shortcuts (.lnk) and direct executable files
+            import os
+            removed_count = 0
+            
+            for filename in os.listdir(startup_folder):
+                file_path = os.path.join(startup_folder, filename)
+                if not os.path.isfile(file_path):
+                    continue
+                    
+                # Check if filename contains "monitor" (case-insensitive) 
+                # and is either a .lnk shortcut or .exe file
+                filename_lower = filename.lower()
+                if "monitor" in filename_lower and (filename_lower.endswith('.lnk') or filename_lower.endswith('.exe')):
+                    try:
+                        os.remove(file_path)
+                        self.logger.info(f"Removed monitor file from startup: {filename}")
+                        print(f"Removed monitor file from startup: {filename}")
+                        removed_count += 1
+                    except Exception as e:
+                        self.logger.error(f"Failed to remove {filename}: {e}")
+            
+            if removed_count > 0:
+                self.logger.info(f"Successfully removed {removed_count} monitor files from startup")
+            else:
+                self.logger.warning("No monitor files found in startup folder to remove")
                 
         except Exception as e:
             self.logger.error(f"Error removing monitor from startup: {e}")
@@ -692,6 +725,63 @@ class DecisionEngine(QObject):
         # Update status tracking if status actually changed
         if new_status != previous_status:
             self.device_status_manager.update_device_status(device_id, new_status, device.device_type, device.last_updated)
+    
+    def _get_all_devices_for_server(self) -> list:
+        """
+        Get all devices data for server reporting.
+        
+        Returns:
+            List of all device dictionaries
+        """
+        try:
+            # Get all device statuses from DeviceStatusManager
+            all_device_statuses = self.device_status_manager.get_device_statuses()
+            
+            if not all_device_statuses:
+                return []
+            
+            # Include ALL devices (not just failed ones)
+            all_devices = []
+            for device_id, device_info in all_device_statuses.items():
+                device_data = {
+                    'device_id': device_id,
+                    'device_type': device_info.get('type', 'unknown'),
+                    'status': device_info.get('status'),
+                    'timestamp': device_info.get('timestamp')
+                }
+                all_devices.append(device_data)
+            
+            self.logger.debug(f"Collected {len(all_devices)} devices for server pulse")
+            return all_devices
+            
+        except Exception as e:
+            self.logger.error(f"Error collecting devices: {e}")
+            return []
+    
+    def _get_restart_history_for_server(self, limit=50) -> list:
+        """
+        Get restart history data for server reporting.
+        
+        Args:
+            limit: Maximum number of restart records to return
+            
+        Returns:
+            List of restart history dictionaries
+        """
+        try:
+            if not self.restart_manager:
+                self.logger.debug("No restart manager available")
+                return []
+            
+            # Get last 50 restart records
+            restart_history = self.restart_manager.get_restart_history(limit)
+            
+            self.logger.debug(f"Collected {len(restart_history)} restart records for server pulse")
+            return restart_history
+            
+        except Exception as e:
+            self.logger.error(f"Error collecting restart history: {e}")
+            return []
     
     @staticmethod
     def reset_statuses() -> None:

@@ -62,7 +62,7 @@ class MockParentForServer:
     def _get_eintzofia_version(self):
         """Get eintzofia version from config."""
         if self.config_service:
-            return self.config_service.get("versions", "ein_tzofia_version", "1.0.0")
+            return self.config_service.get("versions", "eintzofia_version", "1.0.0")
         return "1.0.0"
     
     def _get_restart_setting(self):
@@ -142,13 +142,21 @@ class ServerManager:
         self.legacy_server.parent.settings['File_Path'] = path
 
     # Core server communication methods
-    def pulse_to_server(self, password='', return_id=False):
-        """Send pulse to server using legacy implementation."""
+    def pulse_to_server(self, password='', return_id=False, devices=None, restart_history=None):
+        """
+        Send pulse to server with optional device data and restart history.
+        
+        Args:
+            password: Server password
+            return_id: Whether to return device ID
+            devices: List of all device dictionaries (optional)
+            restart_history: List of restart history dictionaries (optional)
+        """
         #print("ServerManager: Sending pulse to server...")
         self.logger.info("Sending pulse to server ")
         print(f"SERVER_MANAGER: Sending pulse to server {self.config_service.get('general', 'server_url','')}")
         try:
-            result = self.legacy_server.pulse_to_server(password, return_id)
+            result = self.legacy_server.pulse_to_server(password, return_id, devices, restart_history)
             print(f"SERVER_MANAGER: Pulse completed with result: {result}")
             self.logger.info(f"Pulse to server completed: {result}")
             return result

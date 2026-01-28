@@ -4,6 +4,7 @@ import requests
 import zipfile
 import tempfile
 import traceback
+import stat
 import pandas as pd
 import shutil
 import pickle
@@ -80,7 +81,7 @@ class ServerManager:
             return None          
 
     # IMPORTANT FOR DAN
-    def pulse_to_server(self,password = '',return_ID = False):     
+    def pulse_to_server(self,password = '',return_ID = False, devices=None, restart_history=None):     
         
         # initialize download flags
         eintzofia_download = False
@@ -96,15 +97,28 @@ class ServerManager:
         print(f'DEBUG: Sending monitor_version: {self.parent.MONITOR_VERSION}')
         print(f'DEBUG: Sending eintzofia_version: {self.parent.EINTZOFIA_VERSION}')
         
+        # Prepare payload with all devices and restart history
+        payload = {
+            'location': location,
+            'password': password,
+            'device_id': device_id,
+            'return_ID': return_ID,
+            'monitor_version': self.parent.MONITOR_VERSION,
+            'eintzofia_version': self.parent.EINTZOFIA_VERSION
+        }
+        
+        # Add all devices if provided
+        if devices:
+            payload['devices'] = devices
+            print(f'DEBUG: Sending {len(devices)} devices')
+        
+        # Add restart history if provided
+        if restart_history:
+            payload['restart_history'] = restart_history
+            print(f'DEBUG: Sending {len(restart_history)} restart records')
+        
         try:
-            response = requests.post(server_url, json={
-                'location': location,
-                'password': password,
-                'device_id': device_id,
-                'return_ID': return_ID,
-                'monitor_version': self.parent.MONITOR_VERSION,
-                'eintzofia_version': self.parent.EINTZOFIA_VERSION
-            }, timeout=30)
+            response = requests.post(server_url, json=payload, timeout=30)
             data = response.json()
             if response.status_code == 200:
                 print(f'Pulse sent successfully for {location}')
@@ -1506,7 +1520,7 @@ class ServerManager:
 
     def download_monitor_downloader(self, save_path):
         """
-        Download monitor downloader from server.
+        Download monitor downloader ZIP from server and extract the executable.
         
         Args:
             save_path: Full path where to save the downloader executable
@@ -1517,51 +1531,111 @@ class ServerManager:
         url = f"{self.base_url}/download_monitor_downloader"
         
         try:
-            print(f"DEBUG: Downloading monitor downloader from {url}")
-            response = requests.get(url, stream=True, timeout=(10, 300))  # 10s connect, 5min total
+            print(f"DEBUG: Downloading monitor downloader ZIP from {url}")
+            response = requests.get(url, stream=True, timeout=(30, 3600))  # Match monitor download timeout
             response.raise_for_status()
             
-            # Get file size from headers for progress tracking
             total_size = int(response.headers.get("content-length") or 0)
             downloaded = 0
             
-            print(f"DEBUG: Downloading monitor downloader ({self._format_file_size(total_size)})")
+            print(f"DEBUG: Downloading monitor downloader ZIP ({self._format_file_size(total_size)})")
             
-            # Create directory if it doesn't exist
+            # Create directory if needed
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
             
-            # Download with progress tracking
-            with open(save_path, "wb") as f:
+            # Download to ZIP file first
+            zip_path = save_path.replace('.exe', '.zip')  # Create zip filename
+            
+            with open(zip_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if not chunk:
                         continue
                     f.write(chunk)
                     downloaded += len(chunk)
                     
-                    # Log progress every MB
                     if total_size and downloaded % (1024 * 1024) == 0:
                         progress = downloaded / total_size * 100
                         print(f"DEBUG: Download progress: {progress:.1f}% ({self._format_file_size(downloaded)}/{self._format_file_size(total_size)})")
             
-            # Make executable on Linux/Unix systems
-            if not sys.platform.startswith("win"):
-                import stat
+            print(f"DEBUG: ZIP download completed: {zip_path}")
+            
+            # Validate it's a ZIP file
+            if not zipfile.is_zipfile(zip_path):
+                print(f"DEBUG: Downloaded file is not a valid ZIP archive")
+                os.remove(zip_path)
+                return False
+            
+            # Extract the ZIP file
+            extract_dir = os.path.dirname(save_path)
+            
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            
+            print(f"DEBUG: Extracted ZIP contents to: {extract_dir}")
+            
+            # Find the executable in extracted files
+            executable_name = "monitor_downloader.exe" if sys.platform.startswith("win") else "monitor_downloader"
+            
+            # Look for the executable
+            found_executable = None
+            for root, dirs, files in os.walk(extract_dir):
+                for file in files:
+                    if file.lower() == executable_name.lower():
+                        found_executable = os.path.join(root, file)
+                        break
+                if found_executable:
+                    break
+            
+            if not found_executable:
+                print(f"DEBUG: Could not find {executable_name} in extracted files")
+                os.remove(zip_path)
+                return False
+            
+            # Move executable to final location if it's not already there
+            if found_executable != save_path:
+                if os.path.exists(save_path):
+                    os.remove(save_path)
+                os.rename(found_executable, save_path)
+                print(f"DEBUG: Moved executable to: {save_path}")
+            
+            # Set executable permissions
+            if sys.platform.startswith("win"):
+                os.chmod(save_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | 
+                        stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+            else:
                 os.chmod(save_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
             
-            print(f"DEBUG: Monitor downloader saved to: {save_path}")
-            return True
+            # Clean up ZIP file
+            os.remove(zip_path)
+            print(f"DEBUG: Cleaned up ZIP file")
+            
+            # Verify final executable
+            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+                print(f"DEBUG: Monitor downloader successfully extracted: {save_path}")
+                print(f"DEBUG: Final file size: {self._format_file_size(os.path.getsize(save_path))}")
+                return True
+            else:
+                print(f"DEBUG: Final executable validation failed")
+                return False
             
         except requests.exceptions.RequestException as e:
             print(f"DEBUG: Request error downloading monitor downloader: {e}")
             return False
+        except zipfile.BadZipFile as e:
+            print(f"DEBUG: Invalid ZIP file: {e}")
+            if 'zip_path' in locals() and os.path.exists(zip_path):
+                os.remove(zip_path)
+            return False
         except Exception as e:
             print(f"DEBUG: Error downloading monitor downloader: {e}")
+            if 'zip_path' in locals() and os.path.exists(zip_path):
+                os.remove(zip_path)
             return False
 
 if __name__ == '__main__':
     OS_manager = os_manager()
     server = ServerManager()
     #server.send_email_debug()
-    server.set_download_files(locations=["Nahshonim 2-6"], eintzofia_download=False, monitor_download=True, model_download=False)
+    server.set_download_files(locations=["Dan's PC"], eintzofia_download=True, monitor_download=True, model_download=False)
 
     

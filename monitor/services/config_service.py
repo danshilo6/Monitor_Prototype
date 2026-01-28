@@ -12,7 +12,7 @@ class ConfigService:
 
     def __init__(self, config_path: str = None):
         self.logger = get_logger("monitor.services.config_service")
-        self.MONITOR_VERSION = "08-01-26"
+        self.MONITOR_VERSION = "27_01_26"
         
         # Use absolute path relative to executable
         if config_path is None:
@@ -45,7 +45,11 @@ class ConfigService:
                 if self._config_path.exists():
                     self.logger.debug(f"Loading config from: {self._config_path}")
                     with open(self._config_path, "r", encoding="utf-8") as f:
-                        self._config = json.load(f)
+                        loaded_config = json.load(f)
+                    
+                    # Merge with defaults to ensure all sections exist
+                    self._config = self._merge_with_defaults(loaded_config)
+                    self.logger.debug("Config loaded and merged with defaults")
                 else:
                     self.logger.info("Config file not found, using default configuration")
                     self._config = self._default_config()
@@ -54,6 +58,41 @@ class ConfigService:
                 self._config = self._default_config()
             finally:
                 self._release_lock()
+
+    def _merge_with_defaults(self, loaded_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge loaded config with defaults to ensure all sections and keys exist."""
+        defaults = self._default_config()
+        merged_config = {}
+        
+        for section_name, default_section in defaults.items():
+            if section_name not in loaded_config:
+                # Section is completely missing, use defaults
+                merged_config[section_name] = default_section.copy()
+                self.logger.info(f"Missing section '{section_name}' - using defaults")
+            else:
+                # Section exists, merge individual keys
+                merged_config[section_name] = {}
+                loaded_section = loaded_config[section_name]
+                
+                for key, default_value in default_section.items():
+                    if key not in loaded_section:
+                        # Key is missing, use default
+                        merged_config[section_name][key] = default_value
+                        self.logger.debug(f"Missing key '{section_name}.{key}' - using default: {default_value}")
+                    else:
+                        # Key exists, use loaded value
+                        merged_config[section_name][key] = loaded_section[key]
+        
+        # Preserve any extra sections/keys that aren't in defaults
+        for section_name, section_data in loaded_config.items():
+            if section_name not in merged_config:
+                merged_config[section_name] = section_data
+            else:
+                for key, value in section_data.items():
+                    if key not in defaults.get(section_name, {}):
+                        merged_config[section_name][key] = value
+        
+        return merged_config
 
     def _get_monitor_version(self) -> str:
         return self.MONITOR_VERSION
@@ -67,7 +106,7 @@ class ConfigService:
             },
             "versions": {
                 "monitor_version": self._get_monitor_version(),
-                "ein_tzofia_version": ""
+                "eintzofia_version": ""
             },
             "system": {
                 "enable_restart": True,

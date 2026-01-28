@@ -7,19 +7,20 @@
   },
   "versions": {
     "monitor_version": "08-01-26",
-    "ein_tzofia_version": "",
-    "eintzofia_version": "06_12_25"
+    "eintzofia_version": "06_12_25",
+    "ein_tzofia_version": ""
   },
   "system": {
     "enable_restart": true,
     "minutes_to_restart": "5",
     "restart_cooldown_minutes": "10",
-    "startup_snooze_time": "10",
+    "startup_snooze_time": "5",
     "check_eintzofia_running": true,
     "enable_eintzofia_auto_reopen": true,
-    "decision_cycle_seconds": "300",
+    "decision_cycle_seconds": "15",
     "enable_device_failure_emails": true,
-    "enable_restart_emails": true
+    "enable_restart_emails": true,
+    "pending_restart_after_update": false
   },
   "devices": {
     "relay_fail_threshold": "30",
@@ -28,7 +29,7 @@
     "history_length": "50"
   },
   "device": {
-    "signed_id": "1637579251531034ed30495c8cfa4ecb6b8976354c8fa543215518335f2bb42efb2874968d87be19cbe865e415c1190b15689e2564fc0e3a0b879eeae0435ee56e63d7627d83c6a6489bc85c9ca57412969e51ba82b6d6c4c24b07e333f7a4cb61326bd4011b0a83db4a3d1d9e61a916c8239c9c1d2cc4d0f6705af74dadc7485df44d8f57e0c87b524fbe42d7cc9ff036edb01c10dba9f64da82b017378d92e337ffcc56666151ac54f6a30f50f0fc9a68c4747766f18db95260a9a46ce016e9c93610e09c46689317a7ef9c1535de586392d4d03736597645f3015cccd23770bed2a0500c63660764bd3c271f64f331ebceba7b963ca9d5aad784c80dbb6f3"
+    "signed_id": "ba9aa3d689c953357aa5363875f2a9ca911e1954e81f26e360e3f82dda6780d97afead60ee7a66b8b6a8a44f4067a3ae98e7614ed4e12229653904251ce6f972e418e0f469816e2a5145f9cac76bec580289984ddfea6c6fc1a715f9bf2c9665c2eda9743e17aa0102d3516960358de72f45a73be728aa300c9ab93e69b8f5ded40e11ee40e5aa611f5fcebd4e6b902bb40c115e8d672447d90c293e8232c4296089cc2926105cb41110b8fc4643d2777fbe85b1f31ea6fb4454eee4c2f8801384a3500522d94e9660cebffc1e76bdbd13c6b3c96f0fda8a81e9af4d9e385a16472eda21e2627df840e547c023af4afcf9b699a298cf2e9c9bfaa2d3ec118e2f"
   },
   "downloads": {
     "eintzofia_flag": false,
