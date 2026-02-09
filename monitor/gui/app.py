@@ -2,6 +2,8 @@ import sys
 import argparse
 import platform
 import pickle
+import subprocess
+import os
 from pathlib import Path
 import time
 import re
@@ -736,6 +738,11 @@ def parse_arguments():
         help="Interval between test alerts in seconds (default: 3.0)"
     )
     # TODO: REMOVE TEST CODE BEFORE PRODUCTION - End
+    parser.add_argument(
+        "--spawned-in-terminal",
+        action="store_true",
+        help="Internal flag indicating the app was spawned in a terminal (prevents infinite loops)"
+    )
     return parser.parse_args()
 
 
@@ -782,10 +789,119 @@ def parse_arguments():
 #         print(f"DEBUG: Error checking manifest processing flag: {e}")
 
 
+def check_and_spawn_terminal():
+    """
+    Check if the application is running in a terminal.
+    If not, spawn a new terminal and restart the application within it.
+    Returns True if terminal spawning was attempted, False if already in terminal.
+    """
+    # Check if we're already in a terminal by checking if stdin/stdout are TTY
+    if hasattr(sys.stdin, 'isatty') and sys.stdin.isatty():
+        print("DEBUG: Already running in terminal, continuing...")
+        return False
+    
+    # Check if this is a restart to avoid infinite loops
+    if '--spawned-in-terminal' in sys.argv:
+        print("DEBUG: Already spawned in terminal, continuing...")
+        return False
+    
+    print("DEBUG: Not running in terminal, attempting to spawn one...")
+    
+    try:
+        # Get the current executable path
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller executable
+            executable_path = sys.executable
+        else:
+            # Running as Python script
+            executable_path = sys.executable
+            script_path = __file__
+        
+        # Prepare command arguments
+        if getattr(sys, 'frozen', False):
+            # For executable, just run it with terminal flag
+            cmd_args = [executable_path] + sys.argv[1:] + ['--spawned-in-terminal']
+        else:
+            # For script, run with Python
+            cmd_args = [executable_path, script_path] + sys.argv[1:] + ['--spawned-in-terminal']
+        
+        if platform.system() == "Linux":
+            # Try different terminal emulators on Linux
+            terminals = [
+                ['gnome-terminal', '--', 'bash', '-c'],
+                ['xterm', '-e'],
+                ['konsole', '-e'],
+                ['xfce4-terminal', '-e'],
+                ['mate-terminal', '-e'],
+                ['lxterminal', '-e']
+            ]
+            
+            # Create command that will keep terminal open after program ends
+            cmd_str = ' '.join(f'"{arg}"' for arg in cmd_args)
+            full_cmd = f'{cmd_str}; echo "Press Enter to close terminal..."; read'
+            
+            for terminal_cmd in terminals:
+                try:
+                    if subprocess.run(['which', terminal_cmd[0]], 
+                                    capture_output=True, check=False).returncode == 0:
+                        print(f"DEBUG: Found terminal: {terminal_cmd[0]}")
+                        
+                        if terminal_cmd[0] == 'gnome-terminal':
+                            # gnome-terminal has different syntax
+                            subprocess.Popen(terminal_cmd + [full_cmd])
+                        else:
+                            # Other terminals use -e
+                            subprocess.Popen(terminal_cmd + ['bash', '-c', full_cmd])
+                        
+                        print("DEBUG: Spawned new terminal window")
+                        return True
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    continue
+            
+            print("DEBUG: No supported terminal emulator found")
+            return False
+            
+        elif platform.system() == "Windows":
+            # On Windows, use cmd to spawn new console window
+            cmd_str = ' '.join(f'"{arg}"' for arg in cmd_args)
+            full_cmd = f'{cmd_str} & pause'
+            
+            subprocess.Popen(['cmd', '/c', 'start', 'cmd', '/k', full_cmd])
+            print("DEBUG: Spawned new console window on Windows")
+            return True
+            
+        else:
+            print(f"DEBUG: Unsupported platform for terminal spawning: {platform.system()}")
+            return False
+            
+    except Exception as e:
+        print(f"DEBUG: Error spawning terminal: {e}")
+        return False
+
+
 def main() -> int:
     print("Starting Monitor Application...")
 
     """Main application entry point."""
+    
+    # First, ensure we're in the correct working directory
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller executable
+        app_dir = Path(sys.executable).parent
+    else:
+        # Running as Python script - use project root
+        app_dir = Path(__file__).parent.parent.parent
+    
+    # Change to the application directory to ensure relative paths work correctly
+    original_cwd = os.getcwd()
+    os.chdir(str(app_dir))
+    print(f"Changed working directory from {original_cwd} to {app_dir}")
+    
+    # Check if we need to spawn a terminal first
+    if check_and_spawn_terminal():
+        print("DEBUG: Spawned terminal, exiting current instance...")
+        return 0
+    
     print("DEBUG: Parsing arguments...")
     # Parse command line arguments
     args = parse_arguments()
@@ -793,14 +909,7 @@ def main() -> int:
     
     print("DEBUG: Initializing logging...")
     # Initialize logging relative to executable location
-    if getattr(sys, 'frozen', False):
-        # Running as PyInstaller executable
-        executable_dir = Path(sys.executable).parent
-    else:
-        # Running as Python script - use project root
-        executable_dir = Path(__file__).parent.parent.parent
-    
-    log_dir = executable_dir / "logs"
+    log_dir = app_dir / "logs"
     init_logging(mode="sync", log_dir=str(log_dir))
     print("DEBUG: Logging initialized")
     
