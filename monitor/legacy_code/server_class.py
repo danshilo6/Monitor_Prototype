@@ -1528,7 +1528,15 @@ class ServerManager:
         Returns:
             bool: True if download successful, False otherwise
         """
-        url = f"{self.base_url}/download_monitor_downloader"
+        # Check if we're on Linux using the same method as os_class.py
+        is_linux = platform.system() == "Linux"
+        
+        if is_linux:
+            url = f"{self.base_url}/download_monitor_downloader?linux=true"
+            print("DEBUG: Detected Linux system - requesting Linux version of monitor downloader")
+        else:
+            url = f"{self.base_url}/download_monitor_downloader"
+            print("DEBUG: Detected non-Linux system - requesting default version of monitor downloader")
         
         try:
             print(f"DEBUG: Downloading monitor downloader ZIP from {url}")
@@ -1574,7 +1582,7 @@ class ServerManager:
             print(f"DEBUG: Extracted ZIP contents to: {extract_dir}")
             
             # Find the executable in extracted files
-            executable_name = "monitor_downloader.exe" if sys.platform.startswith("win") else "monitor_downloader"
+            executable_name = "monitor_downloader.exe" if platform.system() == "Windows" else "monitor_downloader"
             
             # Look for the executable
             found_executable = None
@@ -1599,7 +1607,7 @@ class ServerManager:
                 print(f"DEBUG: Moved executable to: {save_path}")
             
             # Set executable permissions
-            if sys.platform.startswith("win"):
+            if platform.system() == "Windows":
                 os.chmod(save_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | 
                         stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
             else:
