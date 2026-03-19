@@ -841,7 +841,7 @@ class os_manager:
                 # Shortcut file will be placed in the same directory with .lnk extension
                 shortcut_path = os.path.join(directory, base_name + ".lnk")
                 shortcut = shell.CreateShortcut(shortcut_path)
-                shortcut.Targetpath = file_path
+                shortcut.TargetPath = file_path
                 shortcut.WorkingDirectory = directory
                 shortcut.IconLocation = file_path
                 shortcut.save()
@@ -984,7 +984,7 @@ class os_manager:
                 shell = Dispatch('WScript.Shell')
                 shortcut_path = os.path.join(directory, f"{base_name}.lnk")
                 shortcut = shell.CreateShortcut(shortcut_path)
-                shortcut.Targetpath = file_path
+                shortcut.TargetPath = file_path
                 shortcut.WorkingDirectory = directory
                 shortcut.IconLocation = file_path
                 shortcut.save()
@@ -1014,62 +1014,81 @@ class os_manager:
             return None
             
     def create_preserve_name_shortcut(self, file_path):
-        """
-        Create a shortcut that preserves the original executable name.
-        
-        Args:
-            file_path: Path to the file for which to create a shortcut
-            
-        Returns:
-            Path to the created shortcut, or None if creation failed
-        """
+        print(f"Attempting to create shortcut for file: {file_path}")
         if not os.path.exists(file_path):
             print(f"File not found: {file_path}")
             return None
-            
-        # Get the directory and base name of the file
+
+        file_path = os.path.normpath(os.path.abspath(str(file_path)))
         directory = os.path.dirname(file_path)
-        base_name = os.path.basename(file_path)
-        
-        # Remove extension if it exists
-        if "." in base_name:
-            base_name = os.path.splitext(base_name)[0]
-        
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        shortcut_path = os.path.join(directory, f"{base_name}.lnk")
+
         print(f"Creating shortcut for {file_path} with preserved name {base_name}")
-        
+
         if self.current_os == "Windows":
             try:
-                # Import Dispatch here to ensure it's available
-                from win32com.client import Dispatch
-                
-                shell = Dispatch('WScript.Shell')
-                shortcut_path = os.path.join(directory, f"{base_name}.lnk")
-                shortcut = shell.CreateShortcut(shortcut_path)
-                shortcut.Targetpath = file_path
-                shortcut.WorkingDirectory = directory
-                shortcut.IconLocation = file_path
-                shortcut.save()
-                print(f"Windows shortcut created at: {shortcut_path}")
-                return shortcut_path
-            except Exception as e:
-                print(f"Failed to create Windows shortcut: {e}")
+                def ps_escape(value):
+                    return str(value).replace("'", "''")
+
+                file_path_ps = ps_escape(file_path)
+                directory_ps = ps_escape(directory)
+                shortcut_path_ps = ps_escape(shortcut_path)
+
+                ps_script = f"""
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut('{shortcut_path_ps}')
+$Shortcut.TargetPath = '{file_path_ps}'
+$Shortcut.WorkingDirectory = '{directory_ps}'
+$Shortcut.IconLocation = '{file_path_ps}'
+$Shortcut.Save()
+"""
+
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+                    capture_output=True,
+                    text=True
+                )
+
+                print("DEBUG PowerShell return code:", result.returncode)
+                print("DEBUG PowerShell stdout:", result.stdout)
+                print("DEBUG PowerShell stderr:", result.stderr)
+
+                if result.returncode == 0 and os.path.exists(shortcut_path):
+                    print(f"Windows shortcut created at: {shortcut_path}")
+                    return shortcut_path
+
+                print("Failed to create Windows shortcut via PowerShell")
                 return None
+
+            except Exception as e:
+                print(f"Failed to create Windows shortcut via PowerShell: {e}")
+                return None
+
         elif self.current_os == "Linux":
             try:
                 shortcut_path = os.path.join(directory, f"{base_name}.desktop")
+
+                exec_command = f"/bin/bash -c \"cd '{directory}' && './{os.path.basename(file_path)}'\""
+
                 with open(shortcut_path, "w") as f:
                     f.write("[Desktop Entry]\n")
                     f.write("Type=Application\n")
                     f.write(f"Name={base_name}\n")
-                    f.write(f"Exec={file_path}\n")
+                    f.write(f"Exec={exec_command}\n")
                     f.write(f"Path={directory}\n")
                     f.write("Terminal=true\n")
+                    f.write("StartupNotify=false\n")
+                    f.write("X-GNOME-Autostart-enabled=true\n")
+
                 os.chmod(shortcut_path, 0o755)
                 print(f"Linux shortcut created at: {shortcut_path}")
                 return shortcut_path
+
             except Exception as e:
                 print(f"Failed to create Linux shortcut: {e}")
                 return None
+
         else:
             print(f"Unsupported OS for creating shortcuts: {self.current_os}")
             return None

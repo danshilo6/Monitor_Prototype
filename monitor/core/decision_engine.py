@@ -35,7 +35,7 @@ Main functionality:
         except Exception as e:
             self.logger.error(f"Server pulse error: {e}")ill be extended to handle automated decision making
 """
-
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from PySide6.QtCore import QObject, Slot, Signal, QTimer
@@ -558,6 +558,7 @@ class DecisionEngine(QObject):
     def _prepare_monitor_downloader(self) -> None:
         """
         Download monitor downloader and replace monitor in startup folder.
+        Handles both Windows and Linux startup systems.
         """
         try:
             self.logger.info("Preparing monitor downloader...")
@@ -568,15 +569,32 @@ class DecisionEngine(QObject):
                 self.logger.error("Failed to download monitor downloader")
                 return
                 
-            # Step 2: Remove current monitor from startup folder
+            # Step 2: Make sure the downloader is executable (important for Linux)
+            current_os = getattr(self.os_manager, 'current_os', None)
+            if current_os == "Linux":
+                import os
+                os.chmod(downloader_path, 0o755)
+                self.logger.info(f"Set executable permissions for downloader: {downloader_path}")
+                
+            # Step 3: Remove current monitor from startup folder
             self._remove_monitor_from_startup()
             
-            # Step 3: Add downloader to startup folder
+            # Step 4: Add downloader to startup folder
             startup_shortcut = self.os_manager.create_shortcut_and_move_to_startup(downloader_path)
             if startup_shortcut:
                 self.logger.info(f"Monitor downloader added to startup: {startup_shortcut}")
+                print(f"Monitor downloader added to startup: {startup_shortcut}")
                 
-                # Step 4: Set flag to restart computer (downloader will run on next boot)
+                # For Linux, verify the desktop file was created properly
+                if current_os == "Linux" and startup_shortcut.endswith('.desktop'):
+                    try:
+                        with open(startup_shortcut, 'r') as f:
+                            content = f.read()
+                            self.logger.info(f"Created desktop file content:\n{content}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not verify desktop file content: {e}")
+                
+                # Step 5: Set flag to restart computer (downloader will run on next boot)
                 self.config_service.set("system", "pending_restart_after_update", True)
                 self.logger.info("Restart flag set - system will restart to run downloader")
             else:
@@ -595,19 +613,45 @@ class DecisionEngine(QObject):
                 
             self.logger.info("Removing monitor from startup folder")
             
-            # Remove both shortcuts (.lnk) and direct executable files
             import os
             removed_count = 0
+            
+            # Get OS to determine what file types to look for
+            current_os = getattr(self.os_manager, 'current_os', None)
             
             for filename in os.listdir(startup_folder):
                 file_path = os.path.join(startup_folder, filename)
                 if not os.path.isfile(file_path):
                     continue
                     
-                # Check if filename contains "monitor" (case-insensitive) 
-                # and is either a .lnk shortcut or .exe file
                 filename_lower = filename.lower()
-                if "monitor" in filename_lower and (filename_lower.endswith('.lnk') or filename_lower.endswith('.exe')):
+                should_remove = False
+                
+                # Check if filename contains "monitor" (case-insensitive)
+                if "monitor" in filename_lower:
+                    if current_os == "Windows":
+                        # Windows: Remove .lnk shortcuts and .exe files
+                        if filename_lower.endswith('.lnk') or filename_lower.endswith('.exe'):
+                            should_remove = True
+                    elif current_os == "Linux":
+                        # Linux: Remove .desktop files
+                        if filename_lower.endswith('.desktop'):
+                            should_remove = True
+                            
+                            # Also check if desktop file content references Monitor
+                            try:
+                                with open(file_path, 'r') as f:
+                                    content = f.read().lower()
+                                    if 'monitor' in content or 'eintzofia' in content:
+                                        should_remove = True
+                            except Exception:
+                                pass  # If we can't read it, rely on filename check
+                    else:
+                        # For other OS, try both common extensions
+                        if filename_lower.endswith(('.lnk', '.exe', '.desktop')):
+                            should_remove = True
+                
+                if should_remove:
                     try:
                         os.remove(file_path)
                         self.logger.info(f"Removed monitor file from startup: {filename}")
