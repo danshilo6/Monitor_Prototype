@@ -1,5 +1,11 @@
 import asyncio
+import io
 import os
+import re
+import requests
+import tempfile
+import time
+import zipfile
 from pathlib import Path
 from monitor.log_setup import get_logger
 
@@ -404,7 +410,127 @@ class ServerManager:
         except Exception as e:
             self.logger.error(f"Failed to upload zip file: {e}")
             return None
-    
+
+    def upload_eintzofia_config(self) -> bool:
+        """
+        Zips all camera IP folders and configfile.json from the EinTzofia temp directory
+        and uploads them to POST /upload_site_config on the server.
+        Returns True on success, False on failure.
+        """
+        _IP_PATTERN = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+        MAX_RETRIES = 2
+        RETRY_DELAY = 5
+
+        temp_dir = Path(self.os_manager.get_temp_dir_path())
+        if not temp_dir.exists():
+            self.logger.warning("EinTzofia temp directory does not exist, skipping upload")
+            return False
+
+        device_id = self.os_manager.generate_device_id()
+        location = self.config_service.get("general", "location_name", "unknown")
+        server_url = self.config_service.get("general", "server_url", "")
+        endpoint = f"{server_url}/upload_site_config"
+
+        # Check cooldown before sending large files
+        try:
+            cooldown_url = f"{server_url}/check_config_upload_cooldown"
+            cooldown_response = requests.get(cooldown_url, params={"device_id": device_id}, timeout=10)
+            if cooldown_response.status_code == 200:
+                cooldown_data = cooldown_response.json()
+                if cooldown_data.get("on_cooldown", False):
+                    retry_after = cooldown_data.get("retry_after_hours")
+                    print(f"DEBUG: Config upload skipped — on cooldown (retry after {retry_after}h)")
+                    self.logger.info(f"Config upload skipped — on cooldown (retry after {retry_after}h)")
+                    return False
+            else:
+                self.logger.warning(f"Cooldown check returned {cooldown_response.status_code}, proceeding with upload")
+        except requests.exceptions.RequestException as e:
+            self.logger.warning(f"Cooldown check failed: {e}, proceeding with upload")
+
+        _IMAGE_EXTENSIONS = [".jpeg", ".jpg", ".png"]
+
+        # Each entry: (zip_filename, list_of_(arcname, filepath))
+        items_to_zip: list[tuple[str, list[tuple[str, Path]]]] = []
+
+        for entry in temp_dir.iterdir():
+            if not (entry.is_dir() and _IP_PATTERN.match(entry.name)):
+                continue
+            ip = entry.name
+            specific_files: list[tuple[str, Path]] = []
+            # Main image: {ip}.jpeg / {ip}.jpg / {ip}.png
+            for ext in _IMAGE_EXTENSIONS:
+                candidate = entry / f"{ip}{ext}"
+                if candidate.is_file():
+                    specific_files.append((f"{ip}/{candidate.name}", candidate))
+                    break
+            # Regions image: {ip}_regions.jpeg / {ip}_regions.jpg / {ip}_regions.png
+            for ext in _IMAGE_EXTENSIONS:
+                candidate = entry / f"{ip}_regions{ext}"
+                if candidate.is_file():
+                    specific_files.append((f"{ip}/{candidate.name}", candidate))
+                    break
+            if specific_files:
+                items_to_zip.append((f"{ip}.zip", specific_files))
+
+        configfile = temp_dir / "configfile.json"
+        if configfile.exists():
+            items_to_zip.append(("configfile.zip", [("configfile.json", configfile)]))
+
+        if not items_to_zip:
+            self.logger.warning("No camera image files or configfile found to upload")
+            return False
+
+        temp_zip_paths: list[str] = []
+        # Read zip bytes into memory so they can be replayed on a 503 retry
+        file_payloads: list[tuple[str, bytes]] = []
+
+        try:
+            for zip_name, file_entries in items_to_zip:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                    zip_path = tmp.name
+                with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for arcname, source_path in file_entries:
+                        zf.write(source_path, arcname)
+
+                temp_zip_paths.append(zip_path)
+                with open(zip_path, "rb") as f:
+                    file_payloads.append((zip_name, f.read()))
+
+            for attempt in range(MAX_RETRIES):
+                files = [
+                    ("file", (name, io.BytesIO(data), "application/zip"))
+                    for name, data in file_payloads
+                ]
+                post_data = {"device_id": device_id, "location": location}
+
+                try:
+                    response = requests.post(endpoint, files=files, data=post_data, timeout=60)
+                except requests.exceptions.RequestException as e:
+                    self.logger.error(f"Upload request failed: {e}")
+                    return False
+
+                if response.status_code == 200:
+                    self.logger.info(f"EinTzofia config uploaded successfully: {response.json()}")
+                    return True
+                elif response.status_code == 503 and attempt < MAX_RETRIES - 1:
+                    self.logger.warning(f"Server busy (503), retrying in {RETRY_DELAY}s...")
+                    time.sleep(RETRY_DELAY)
+                elif response.status_code == 403:
+                    self.logger.error("Upload rejected: device not approved (403)")
+                    return False
+                else:
+                    self.logger.error(f"Upload failed with status {response.status_code}: {response.text}")
+                    return False
+
+            return False
+
+        finally:
+            for path in temp_zip_paths:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+
     def get_eintzofia_manifest(self):
         """Get EinTzofia manifest from legacy server manager."""
         try:

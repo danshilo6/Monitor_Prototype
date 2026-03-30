@@ -508,12 +508,15 @@ class os_manager:
 
             # Get machine ID - use ONLY /etc/machine-id for consistency
             try:
-                with open("/etc/machine-id", "r") as f:
-                    system_uuid = f.read().strip()
+                with open("/sys/firmware/devicetree/base/serial-number", "rb") as f:
+                    system_uuid = f.read().rstrip(b'\x00').decode('utf-8').strip()
             except (FileNotFoundError, PermissionError) as e:
-                print(f"Machine ID not available: {e}")
-                # Use deterministic fallback that both apps will compute identically
-                system_uuid = self._get_deterministic_system_id()
+                print(f"Device tree serial not available: {e}")
+                try:
+                    with open("/etc/machine-id", "r") as f:
+                        system_uuid = f.read().strip()
+                except (FileNotFoundError, PermissionError):
+                    system_uuid = self._get_deterministic_system_id()
 
             # For Linux, we'll leave drive_serial empty for now (can be added later)
             drive_serial = ""

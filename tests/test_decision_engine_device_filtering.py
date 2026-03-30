@@ -30,44 +30,51 @@ def mock_devices_db():
         "device_valid_camera": DeviceInfo(
             device_id="device_valid_camera",
             device_type="camera",
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         ),
         "device_valid_relay": DeviceInfo(
             device_id="device_valid_relay", 
             device_type="relay",
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         ),
         "device_none_type": DeviceInfo(
             device_id="device_none_type",
             device_type=None,
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         ),
         "device_empty_type": DeviceInfo(
             device_id="device_empty_type",
             device_type="",
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         ),
         "device_whitespace_type": DeviceInfo(
             device_id="device_whitespace_type",
             device_type="   ",
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         ),
         "device_unknown_type": DeviceInfo(
             device_id="device_unknown_type",
             device_type="unknown",
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         ),
         "device_unknown_case": DeviceInfo(
             device_id="device_unknown_case",
             device_type="UNKNOWN",
-            last_seen=datetime.now(),
-            status="success"
+            status="success",
+            last_log_status="success",
+            last_log_consecutive_count=1,
         )
     }
     

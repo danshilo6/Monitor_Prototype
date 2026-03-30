@@ -133,6 +133,9 @@ class ConfigService:
                 "monitor_flag": False,
                 "model_flag": False,
                 "model_password": ""
+            },
+            "uploads": {
+                "eintzofia_config": False
             }
         }
 

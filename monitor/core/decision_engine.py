@@ -340,10 +340,21 @@ class DecisionEngine(QObject):
 
         # Step 5: Upload to server if needed
         try:
-            if self.os_manager.check_camera_folders_changed():
-                print("Camera folders changed - uploading to server...")
+            print("Checking if there were changes in EinTzofia configuration...")
+            if self.os_manager.check_configuration_changed():
+                self.logger.info("Configuration changed - flagging for upload")
+                self.config_service.set("uploads", "eintzofia_config", True)
+
+            if self.config_service.get("uploads", "eintzofia_config", False):
+                print("Uploading EinTzofia configuration to server...")
+                upload_success = self.server_manager.upload_eintzofia_config()
+                if upload_success:
+                    self.logger.info("EinTzofia configuration uploaded successfully")
+                    self.config_service.set("uploads", "eintzofia_config", False)
+                else:
+                    self.logger.warning("EinTzofia configuration upload failed - will retry next cycle")
         except Exception as e:
-            self.logger.error(f"Camera folder check error: {e}")
+            self.logger.error(f"Configuration upload error: {e}")
 
         # Step 6: Evaluate restart conditions
         try:

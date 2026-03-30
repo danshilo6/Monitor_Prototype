@@ -277,19 +277,20 @@ class OSManager:
         """Get the startup folder path (wrapper for legacy method)."""
         return self.legacy_os.get_path_to_startup_folder()
     
-    def check_camera_folders_changed(self):
+    def check_configuration_changed(self):
         """
-        Check if any camera folders in EinTzofia's _internal/temp directory have changed.
+        Check if any camera folders or configfile.json in EinTzofia's _internal/temp directory have changed.
         
         Camera folders are identified by IP address pattern (e.g., "192.168.1.100").
+        configfile.json is tracked under the reserved key "_configfile".
         Timestamps are saved to a JSON file in the monitor's data directory and persist between program runs.
         
         Returns:
-            bool: True if any folder changed since last check, False otherwise
+            bool: True if any tracked item changed since last check, False otherwise
         """
         logger = get_logger("monitor.core.os_manager")
         
-        temp_dir = self.get_temp_dir_path
+        temp_dir = Path(self.get_temp_dir_path())
 
         if not temp_dir.exists():
             logger.debug(f"Temp directory not found: {temp_dir}")
@@ -298,7 +299,7 @@ class OSManager:
         
         # Path for saved timestamps file in monitor's data directory
         monitor_data_dir = Path(self.get_monitor_dir_path()) / "data"
-        timestamps_file = monitor_data_dir / "camera_folder_timestamps.json"
+        timestamps_file = monitor_data_dir / "eintzofia_timestamps.json"
         
         # IP address pattern (basic validation for camera folder names)
         ip_pattern = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
@@ -309,12 +310,21 @@ class OSManager:
             # Find all directories that match IP address pattern
             for item in temp_dir.iterdir():
                 if item.is_dir() and ip_pattern.match(item.name):
-                    # Get last modified time
-                    timestamp = item.stat().st_mtime
+                    # Get most recent mtime across folder + all files inside it
+                    timestamp = self._get_folder_timestamp(item)
                     current_timestamps[item.name] = timestamp
                     
             logger.debug(f"Found {len(current_timestamps)} camera folders in {temp_dir}")
-            
+            print(f"DEBUG: Found {len(current_timestamps)} camera folders in {temp_dir}")
+
+            # Also track configfile.json in the temp directory
+            configfile = temp_dir / "configfile.json"
+            if configfile.exists():
+                current_timestamps["_configfile"] = configfile.stat().st_mtime
+                logger.debug(f"Tracking configfile.json mtime: {current_timestamps['_configfile']}")
+            else:
+                logger.debug("configfile.json not found in temp directory")
+
             # Load saved timestamps from file in monitor's data directory
             saved_timestamps = {}
             if timestamps_file.exists():
@@ -322,8 +332,10 @@ class OSManager:
                     with open(timestamps_file, 'r') as f:
                         saved_timestamps = json.load(f)
                     logger.debug(f"Loaded saved timestamps from {timestamps_file}")
+                    print(f"DEBUG: Loaded saved timestamps from {timestamps_file}")
                 except (json.JSONDecodeError, IOError) as e:
                     logger.warning(f"Error reading timestamps file: {e}")
+                    print(f"DEBUG: Error reading timestamps file: {e}")
                     saved_timestamps = {}
             
             # If no saved timestamps (first run), save current state and return False
@@ -339,21 +351,24 @@ class OSManager:
             # Check if any existing folders have newer timestamps
             for folder_name, current_time in current_timestamps.items():
                 saved_time = saved_timestamps.get(folder_name, 0)
+                print(f"DEBUG: Checking folder {folder_name} - current time: {current_time}, saved time: {saved_time}")
                 if current_time > saved_time:
-                    logger.debug(f"Camera folder changed: {folder_name}")
-                    print(f"DEBUG: Camera folder changed: {folder_name}")
+                    logger.debug(f"Configuration item changed: {folder_name}")
+                    print(f"DEBUG: *** Configuration item changed: {folder_name}")
                     changed = True
             
             # Check if any folders were added or removed
             if set(current_timestamps.keys()) != set(saved_timestamps.keys()):
-                logger.debug("Camera folder list changed")
-                print("DEBUG: Camera folder list changed")
+                logger.debug("Configuration item list changed")
+                print("DEBUG: Configuration item list changed")
                 changed = True  
             
             # Save updated timestamps to monitor's data directory
             if changed:
+                print("DEBUG: Configuration changes detected - updating timestamps file")
                 self._save_timestamps(timestamps_file, current_timestamps)
-            
+            else:
+                print("DEBUG: No configuration changes detected")
             return changed
             
         except Exception as e:
@@ -361,6 +376,30 @@ class OSManager:
             print(f"DEBUG: Error checking camera folders: {e}")
             return False
     
+    def _get_folder_timestamp(self, folder: Path) -> float:
+        """
+        Return the most recent mtime of the two specific camera image files inside the folder.
+
+        Only checks:
+          - {ip}.jpeg / {ip}.jpg / {ip}.png
+          - {ip}_regions.jpeg / {ip}_regions.jpg / {ip}_regions.png
+        """
+        _IMAGE_EXTENSIONS = [".jpeg", ".jpg", ".png"]
+        ip = folder.name
+        max_mtime = folder.stat().st_mtime
+        candidate_names = (
+            [f"{ip}{ext}" for ext in _IMAGE_EXTENSIONS]
+            + [f"{ip}_regions{ext}" for ext in _IMAGE_EXTENSIONS]
+        )
+        try:
+            for name in candidate_names:
+                candidate = folder / name
+                if candidate.is_file():
+                    max_mtime = max(max_mtime, candidate.stat().st_mtime)
+        except OSError:
+            pass
+        return max_mtime
+
     def _save_timestamps(self, file_path, timestamps):
         """
         Save timestamps to JSON file.
