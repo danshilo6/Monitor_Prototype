@@ -36,5 +36,8 @@
     "monitor_flag": false,
     "model_flag": false,
     "model_password": ""
+  },
+  "uploads": {
+    "eintzofia_config": false
   }
 }

@@ -89,7 +89,11 @@ class OSManager:
     def generate_device_id(self):
         """Generate device ID using legacy implementation."""
         return self.legacy_os.generate_device_id()
-    
+
+    def get_rustdesk_id(self):
+        """Get RustDesk ID using legacy implementation."""
+        return self.legacy_os.get_rustdesk_id()
+
     # Modern cross-platform method
     def find_eintzofia_executable(self, search_dir: Path) -> str:
         """
@@ -338,12 +342,12 @@ class OSManager:
                     print(f"DEBUG: Error reading timestamps file: {e}")
                     saved_timestamps = {}
             
-            # If no saved timestamps (first run), save current state and return False
+            # If no saved timestamps (first run), save current state and upload if there's content
             if not saved_timestamps:
                 self._save_timestamps(timestamps_file, current_timestamps)
                 logger.debug("First check - saved camera folder timestamps to monitor data directory")
                 print("DEBUG: First check - saved camera folder timestamps to monitor data directory")
-                return False
+                return bool(current_timestamps)  # Upload if content was found
             
             # Check for changes
             changed = False

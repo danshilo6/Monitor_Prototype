@@ -345,7 +345,8 @@ class DecisionEngine(QObject):
                 self.logger.info("Configuration changed - flagging for upload")
                 self.config_service.set("uploads", "eintzofia_config", True)
 
-            if self.config_service.get("uploads", "eintzofia_config", False):
+            upload_required = self.config_service.get("uploads", "eintzofia_config", False)
+            if upload_required:
                 print("Uploading EinTzofia configuration to server...")
                 upload_success = self.server_manager.upload_eintzofia_config()
                 if upload_success:

@@ -443,8 +443,10 @@ class ServerManager:
                     self.logger.info(f"Config upload skipped — on cooldown (retry after {retry_after}h)")
                     return False
             else:
+                print(f"WARNING: Cooldown check returned {cooldown_response.status_code}, proceeding with upload")
                 self.logger.warning(f"Cooldown check returned {cooldown_response.status_code}, proceeding with upload")
         except requests.exceptions.RequestException as e:
+            print(f"WARNING: Cooldown check failed: {e}, proceeding with upload")
             self.logger.warning(f"Cooldown check failed: {e}, proceeding with upload")
 
         _IMAGE_EXTENSIONS = [".jpeg", ".jpg", ".png"]

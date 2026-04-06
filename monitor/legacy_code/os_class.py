@@ -3,6 +3,7 @@ import os
 import sys
 import ctypes
 from ctypes import c_char_p, c_size_t, c_void_p, POINTER, c_ubyte, c_bool
+import glob
 import platform
 import re
 from datetime import datetime
@@ -538,6 +539,111 @@ class os_manager:
         
         return hardware_info
 
+
+    def get_rustdesk_id(self):
+        """
+        Attempts to retrieve the RustDesk ID of the machine.
+        Tries the CLI approach first, then falls back to reading the config file.
+
+        Returns:
+            str | None: The RustDesk ID, or None if RustDesk is not installed or ID cannot be found.
+        """
+        # Method 1: Try CLI via `rustdesk --get-id`
+        rustdesk_exe = self._find_rustdesk_executable()
+        if rustdesk_exe:
+            try:
+                result = subprocess.run(
+                    [rustdesk_exe, "--get-id"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10,
+                    text=True
+                )
+                # Output may contain noisy "skip ..." and diagnostic lines.
+                # The actual ID is the last line that is purely numeric.
+                for line in reversed(result.stdout.splitlines()):
+                    line = line.strip()
+                    if line.isdigit():
+                        print(f"RustDesk ID (CLI): {line}")
+                        return line
+            except Exception as e:
+                print(f"RustDesk CLI --get-id failed: {e}")
+
+        # Method 2: Parse the RustDesk config TOML file
+        config_paths = self._get_rustdesk_config_paths()
+        for config_path in config_paths:
+            if os.path.isfile(config_path):
+                try:
+                    with open(config_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            match = re.match(r"^id\s*=\s*['\"]?([^'\" \t\r\n]+)['\"]?", line)
+                            if match:
+                                rustdesk_id = match.group(1).strip()
+                                if rustdesk_id:
+                                    print(f"RustDesk ID (config file {config_path}): {rustdesk_id}")
+                                    return rustdesk_id
+                except Exception as e:
+                    print(f"Failed to read RustDesk config at {config_path}: {e}")
+
+        print("RustDesk ID not found (RustDesk may not be installed)")
+        return None
+
+    def _find_rustdesk_executable(self):
+        """Finds the RustDesk executable path on the current OS."""
+        # Check running processes first — works for any install location
+        for proc in psutil.process_iter(['name', 'exe']):
+            try:
+                if proc.info['name'] and 'rustdesk' in proc.info['name'].lower():
+                    exe = proc.info['exe']
+                    if exe and os.path.isfile(exe):
+                        return exe
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        if self.current_os == "Windows":
+            exact_candidates = [
+                shutil.which("rustdesk"),
+                r"C:\Program Files\RustDesk\rustdesk.exe",
+                r"C:\Program Files (x86)\RustDesk\rustdesk.exe",
+                os.path.join(os.getenv("LOCALAPPDATA", ""), "Programs", "RustDesk", "rustdesk.exe"),
+            ]
+            for path in exact_candidates:
+                if path and os.path.isfile(path):
+                    return path
+
+            # Search common directories for versioned portable exes (e.g. rustdesk-1.4.5-x86_64.exe)
+            search_dirs = [r"C:\Apps", r"C:\Tools", r"C:\Portable", os.path.expanduser("~\\Downloads")]
+            for directory in search_dirs:
+                matches = glob.glob(os.path.join(directory, "rustdesk*.exe"))
+                if matches:
+                    return matches[0]
+        else:
+            candidates = [
+                shutil.which("rustdesk"),
+                "/usr/bin/rustdesk",
+                "/usr/local/bin/rustdesk",
+                "/opt/rustdesk/rustdesk",
+            ]
+            for path in candidates:
+                if path and os.path.isfile(path):
+                    return path
+
+        return None
+
+    def _get_rustdesk_config_paths(self):
+        """Returns a list of potential RustDesk config file paths for the current OS."""
+        if self.current_os == "Windows":
+            appdata = os.getenv("APPDATA", "")
+            return [
+                os.path.join(appdata, "RustDesk", "config", "RustDesk.toml"),
+                r"C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
+            ]
+        else:
+            home = os.path.expanduser("~")
+            return [
+                os.path.join(home, ".config", "rustdesk", "RustDesk.toml"),
+                "/root/.config/rustdesk/RustDesk.toml",
+            ]
 
     # IMPORTANT FOR DAN
     def generate_device_id(self):

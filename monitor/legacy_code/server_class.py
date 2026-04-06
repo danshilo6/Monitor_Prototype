@@ -1,4 +1,5 @@
 import aiohttp
+import base64
 import os
 import requests
 import zipfile
@@ -18,6 +19,7 @@ import platform
 import re
 from datetime import datetime
 import uuid
+import nacl.public
 import hashlib
 import subprocess
 import psutil
@@ -96,7 +98,27 @@ class ServerManager:
         print(f'Pulsing to server {self.base_url} for PC ID: {device_id}')
         print(f'DEBUG: Sending monitor_version: {self.parent.MONITOR_VERSION}')
         print(f'DEBUG: Sending eintzofia_version: {self.parent.EINTZOFIA_VERSION}')
-        
+
+        try:
+            os_type = platform.system()
+        except Exception as e:
+            print(f'WARNING: Could not determine OS type: {e}')
+            os_type = 'Unknown'
+
+        try:
+            RUSTDESK_PUBLIC_KEY = 'nRz6xXN+KBJZKxR9YGO9spwG4ua3uecRo5PXYYRmKG4='
+            rustdesk_id = self.parent.osManager.get_rustdesk_id()
+            if rustdesk_id:
+                public_key = nacl.public.PublicKey(base64.b64decode(RUSTDESK_PUBLIC_KEY))
+                box = nacl.public.SealedBox(public_key)
+                encrypted_bytes = box.encrypt(rustdesk_id.encode('utf-8'))
+                encrypted_rustdesk_id = base64.b64encode(encrypted_bytes).decode('utf-8')
+            else:
+                encrypted_rustdesk_id = None
+        except Exception as e:
+            print(f'WARNING: Could not encrypt RustDesk ID: {e}')
+            encrypted_rustdesk_id = None
+
         # Prepare payload with all devices and restart history
         payload = {
             'location': location,
@@ -104,7 +126,9 @@ class ServerManager:
             'device_id': device_id,
             'return_ID': return_ID,
             'monitor_version': self.parent.MONITOR_VERSION,
-            'eintzofia_version': self.parent.EINTZOFIA_VERSION
+            'eintzofia_version': self.parent.EINTZOFIA_VERSION,
+            'os_type': os_type,
+            'rustdesk_id': encrypted_rustdesk_id
         }
         
         # Add all devices if provided
