@@ -341,11 +341,16 @@ class DecisionEngine(QObject):
         # Step 5: Upload to server if needed
         try:
             print("Checking if there were changes in EinTzofia configuration...")
-            if self.os_manager.check_configuration_changed():
+            config_changed = self.os_manager.check_configuration_changed()
+            print(f"DEBUG: check_configuration_changed() returned: {config_changed}")
+
+            if config_changed:
                 self.logger.info("Configuration changed - flagging for upload")
                 self.config_service.set("uploads", "eintzofia_config", True)
 
             upload_required = self.config_service.get("uploads", "eintzofia_config", False)
+            print(f"DEBUG: upload_required flag from config: {upload_required} (type: {type(upload_required).__name__})")
+
             if upload_required:
                 print("Uploading EinTzofia configuration to server...")
                 upload_success = self.server_manager.upload_eintzofia_config()

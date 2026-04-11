@@ -6,6 +6,7 @@ from ctypes import c_char_p, c_size_t, c_void_p, POINTER, c_ubyte, c_bool
 import glob
 import platform
 import re
+import base64
 from datetime import datetime
 import uuid
 import hashlib
@@ -17,6 +18,10 @@ import tempfile
 # import time
 import sys
 from pathlib import Path
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
+except ImportError:
+    _AESGCM = None
 #from monitor.utils.path_utils import get_app_root
 if sys.platform.startswith("Windows"):
     from win32com.client import Dispatch
@@ -543,14 +548,19 @@ class os_manager:
     def get_rustdesk_id(self):
         """
         Attempts to retrieve the RustDesk ID of the machine.
-        Tries the CLI approach first, then falls back to reading the config file.
+        Tries the CLI approach first, then falls back to reading every known
+        config file location.
 
         Returns:
-            str | None: The RustDesk ID, or None if RustDesk is not installed or ID cannot be found.
+            str | None: The RustDesk ID, or None if RustDesk is not installed
+                        or the ID cannot be found.
         """
+        print("[RustDesk] Starting RustDesk ID detection...")
+
         # Method 1: Try CLI via `rustdesk --get-id`
         rustdesk_exe = self._find_rustdesk_executable()
         if rustdesk_exe:
+            print(f"[RustDesk] Found executable: {rustdesk_exe}")
             try:
                 result = subprocess.run(
                     [rustdesk_exe, "--get-id"],
@@ -559,63 +569,293 @@ class os_manager:
                     timeout=10,
                     text=True
                 )
-                # Output may contain noisy "skip ..." and diagnostic lines.
-                # The actual ID is the last line that is purely numeric.
-                for line in reversed(result.stdout.splitlines()):
+                raw_output = result.stdout
+                print(f"[RustDesk] CLI raw output: {repr(raw_output)}")
+
+                # RustDesk IDs are numeric, optionally space-separated groups
+                # e.g. "123456789" or "123 456 789". Noisy lines may prefix the
+                # real ID, so scan from the bottom.
+                # Try both strategies: regex for space-grouped IDs and isdigit()
+                # for plain numeric IDs — use whichever matches first.
+                id_pattern = re.compile(r"^\d[\d ]*\d$|^\d+$")
+                for line in reversed(raw_output.splitlines()):
                     line = line.strip()
-                    if line.isdigit():
-                        print(f"RustDesk ID (CLI): {line}")
+                    matched_by_isdigit = line.isdigit()
+                    matched_by_regex = bool(id_pattern.match(line))
+                    if matched_by_isdigit or matched_by_regex:
+                        print(
+                            f"[RustDesk] ID found via CLI (isdigit={matched_by_isdigit}, "
+                            f"regex={matched_by_regex}): {line}"
+                        )
                         return line
+                print("[RustDesk] CLI returned output but no valid ID line found")
             except Exception as e:
-                print(f"RustDesk CLI --get-id failed: {e}")
+                print(f"[RustDesk] CLI --get-id failed: {e}")
+        else:
+            print("[RustDesk] No executable found, skipping CLI method")
 
-        # Method 2: Parse the RustDesk config TOML file
+        # Method 2: Parse known RustDesk config TOML files
         config_paths = self._get_rustdesk_config_paths()
+        print(f"[RustDesk] Checking {len(config_paths)} config path(s)...")
         for config_path in config_paths:
-            if os.path.isfile(config_path):
-                try:
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        for line in f:
-                            match = re.match(r"^id\s*=\s*['\"]?([^'\" \t\r\n]+)['\"]?", line)
-                            if match:
-                                rustdesk_id = match.group(1).strip()
-                                if rustdesk_id:
-                                    print(f"RustDesk ID (config file {config_path}): {rustdesk_id}")
-                                    return rustdesk_id
-                except Exception as e:
-                    print(f"Failed to read RustDesk config at {config_path}: {e}")
+            exists = os.path.isfile(config_path)
+            print(f"[RustDesk] Config path {'EXISTS' if exists else 'missing'}: {config_path}")
+            if not exists:
+                continue
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    contents = f.read()
+                print(f"[RustDesk] Config file contents ({len(contents)} chars): {repr(contents[:200])}")
 
-        print("RustDesk ID not found (RustDesk may not be installed)")
+                plain_id = None
+                enc_id = None
+                key_pair_raw = None
+
+                for line in contents.splitlines():
+                    # Plain unencrypted ID (older RustDesk versions)
+                    m = re.match(r"^id\s*=\s*['\"]?([^'\" \t\r\n]+)['\"]?", line)
+                    if m:
+                        plain_id = m.group(1).strip()
+                    # Encrypted ID (RustDesk 1.2+ stores enc_id instead of id)
+                    m = re.match(r"^enc_id\s*=\s*['\"]([^'\"]+)['\"]", line)
+                    if m:
+                        enc_id = m.group(1).strip()
+
+                # key_pair is a multi-line TOML array — extract via block search
+                kp_match = re.search(r"key_pair\s*=\s*(\[.*?\])", contents, re.DOTALL)
+                if kp_match:
+                    key_pair_raw = kp_match.group(1)
+
+                if plain_id:
+                    print(f"[RustDesk] ID found via plain 'id' in {config_path}: {plain_id}")
+                    return plain_id
+
+                if enc_id:
+                    print(f"[RustDesk] Found enc_id='{enc_id}', key_pair present={key_pair_raw is not None}")
+
+                    # Method A: AES-GCM using key_pair bytes (some custom builds)
+                    decoded = self._decode_enc_id(enc_id, key_pair_raw)
+                    if decoded:
+                        print(f"[RustDesk] ID decoded (AES-GCM) from {config_path}: {decoded}")
+                        return decoded
+
+                    # Method B: NaCl secretbox using machine UUID (standard RustDesk)
+                    decoded = self._decode_enc_id_nacl(enc_id)
+                    if decoded:
+                        print(f"[RustDesk] ID decoded (NaCl) from {config_path}: {decoded}")
+                        return decoded
+
+                print(f"[RustDesk] No usable 'id' or 'enc_id' found in {config_path}")
+            except Exception as e:
+                print(f"[RustDesk] Failed to read config at {config_path}: {e}")
+
+        print("[RustDesk] ID not found — RustDesk may not be installed or not yet registered")
+        return None
+
+    def _decode_enc_id(self, enc_id: str, key_pair_raw: str) -> "str | None":
+        """
+        Decode a RustDesk enc_id value using the private key stored in key_pair.
+
+        RustDesk 1.2+ encrypts the ID with AES-GCM:
+          - Nonce  = 12 zero bytes
+          - Input  = base64-decode(enc_id[2:])  (strip 2-char '00' version prefix)
+          - Key    = 16 or 32 bytes from key_pair — exact slice varies by RustDesk version
+
+        We try every plausible 16-byte and 32-byte window across both sub-arrays.
+        """
+        if _AESGCM is None:
+            print("[RustDesk] enc_id fallback unavailable: 'cryptography' package not installed")
+            return None
+        if not key_pair_raw:
+            print("[RustDesk] enc_id decode skipped: key_pair not found in config")
+            return None
+        try:
+            # Parse every inner byte array from the key_pair TOML block.
+            # key_pair = [ [b0, b1, ...], [b0, b1, ...] ]
+            sub_arrays = []
+            for arr_match in re.finditer(r"\[\s*([\d\s,]+?)\s*\]", key_pair_raw):
+                arr_bytes = bytes(
+                    int(x.strip()) for x in arr_match.group(1).split(",") if x.strip()
+                )
+                if len(arr_bytes) >= 16:
+                    sub_arrays.append(arr_bytes)
+            print(f"[RustDesk] Parsed {len(sub_arrays)} key sub-array(s): "
+                  f"{[len(a) for a in sub_arrays]} bytes")
+
+            if not sub_arrays:
+                print("[RustDesk] enc_id decode failed: could not parse any key sub-array")
+                return None
+
+            # Strip 2-char '00' version prefix, then base64-decode (pad if needed)
+            b64 = enc_id[2:]
+            padding = (4 - len(b64) % 4) % 4
+            ciphertext = base64.b64decode(b64 + "=" * padding)
+            print(f"[RustDesk] Ciphertext length: {len(ciphertext)} bytes")
+
+            nonce = bytes(12)
+
+            # Build all key candidates: every aligned 16-byte AND 32-byte window
+            # from each sub-array, in order of most-likely-first.
+            key_candidates = []
+            for arr_idx, arr in enumerate(sub_arrays):
+                for key_len in (16, 32):
+                    for offset in range(0, len(arr) - key_len + 1, key_len):
+                        key_candidates.append((arr_idx, offset, arr[offset:offset + key_len]))
+
+            print(f"[RustDesk] Trying {len(key_candidates)} key candidate(s)...")
+            for arr_idx, offset, key_bytes in key_candidates:
+                try:
+                    plaintext = _AESGCM(key_bytes).decrypt(nonce, ciphertext, None)
+                    result = plaintext.decode("utf-8")
+                    print(
+                        f"[RustDesk] Decryption succeeded — array[{arr_idx}] "
+                        f"bytes[{offset}:{offset + len(key_bytes)}] "
+                        f"({len(key_bytes) * 8}-bit key): {result}"
+                    )
+                    return result
+                except Exception:
+                    pass
+
+            print(f"[RustDesk] All {len(key_candidates)} key candidate(s) failed authentication")
+            return None
+        except Exception as e:
+            print(f"[RustDesk] enc_id decode error: {e}")
+            return None
+
+    def _get_machine_uuid_bytes(self) -> list:
+        """
+        Returns a list of 32-byte key candidates derived from the machine UUID.
+        Multiple formats are tried because machine_uid returns platform-specific
+        strings (with dashes on Windows, plain hex on Linux).
+        """
+        candidates = []
+
+        if self.current_os == "Windows":
+            try:
+                import winreg
+                reg_key = winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"SOFTWARE\Microsoft\Cryptography"
+                )
+                uuid_str, _ = winreg.QueryValueEx(reg_key, "MachineGuid")
+                winreg.CloseKey(reg_key)
+                print(f"[RustDesk] MachineGuid: {uuid_str}")
+
+                # With dashes: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (36 chars -> truncate to 32)
+                with_dashes = (uuid_str.encode("ascii") + b"\x00" * 32)[:32]
+                candidates.append(with_dashes)
+
+                # Without dashes: 32 hex chars padded to 32 bytes
+                no_dashes = uuid_str.replace("-", "").encode("ascii")
+                no_dashes_padded = (no_dashes + b"\x00" * 32)[:32]
+                if no_dashes_padded != with_dashes:
+                    candidates.append(no_dashes_padded)
+            except Exception as e:
+                print(f"[RustDesk] Failed to read MachineGuid: {e}")
+        else:
+            for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
+                if os.path.isfile(path):
+                    try:
+                        with open(path) as f:
+                            uuid_str = f.read().strip()
+                        print(f"[RustDesk] machine-id ({path}): {uuid_str}")
+                        as_bytes = (uuid_str.encode("ascii") + b"\x00" * 32)[:32]
+                        candidates.append(as_bytes)
+                        break
+                    except Exception as e:
+                        print(f"[RustDesk] Failed to read {path}: {e}")
+
+        return candidates
+
+    def _decode_enc_id_nacl(self, enc_id: str) -> "str | None":
+        """
+        Decode enc_id using NaCl secretbox (XSalsa20-Poly1305) with the machine
+        UUID as the key — the standard encryption used by RustDesk 1.x.
+
+        Key   = machine UUID bytes, padded/truncated to 32 bytes
+        Nonce = 24 zero bytes (RustDesk always uses a fixed zero nonce for this)
+        Input = base64_decode(enc_id[2:])  (strip 2-char '00' version prefix)
+        """
+        try:
+            import nacl.secret
+            import nacl.exceptions
+        except ImportError:
+            print("[RustDesk] NaCl decode unavailable: 'PyNaCl' not installed")
+            return None
+
+        key_candidates = self._get_machine_uuid_bytes()
+        if not key_candidates:
+            print("[RustDesk] NaCl decode skipped: could not determine machine UUID")
+            return None
+
+        try:
+            b64 = enc_id[2:]
+            padding = (4 - len(b64) % 4) % 4
+            ciphertext = base64.b64decode(b64 + "=" * padding)
+            print(f"[RustDesk] NaCl ciphertext: {len(ciphertext)} bytes, "
+                  f"trying {len(key_candidates)} UUID key candidate(s)...")
+        except Exception as e:
+            print(f"[RustDesk] NaCl base64 decode failed: {e}")
+            return None
+
+        nonce = bytes(24)  # XSalsa20 nonce = 24 bytes; RustDesk uses fixed zeros
+        for i, key in enumerate(key_candidates):
+            try:
+                plaintext = nacl.secret.SecretBox(key).decrypt(ciphertext, nonce=nonce)
+                result = plaintext.decode("utf-8")
+                print(f"[RustDesk] NaCl decode succeeded (candidate {i}): {result}")
+                return result
+            except nacl.exceptions.CryptoError:
+                pass
+            except Exception as e:
+                print(f"[RustDesk] NaCl decode candidate {i} error: {e}")
+
+        print(f"[RustDesk] NaCl decode failed for all {len(key_candidates)} key candidate(s)")
         return None
 
     def _find_rustdesk_executable(self):
         """Finds the RustDesk executable path on the current OS."""
+        print("[RustDesk] Searching for executable...")
+
         # Check running processes first — works for any install location
         for proc in psutil.process_iter(['name', 'exe']):
             try:
                 if proc.info['name'] and 'rustdesk' in proc.info['name'].lower():
                     exe = proc.info['exe']
                     if exe and os.path.isfile(exe):
+                        print(f"[RustDesk] Found via running process: {exe}")
                         return exe
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
         if self.current_os == "Windows":
+            localappdata = os.getenv("LOCALAPPDATA", "")
+            programdata = os.getenv("PROGRAMDATA", r"C:\ProgramData")
             exact_candidates = [
                 shutil.which("rustdesk"),
                 r"C:\Program Files\RustDesk\rustdesk.exe",
                 r"C:\Program Files (x86)\RustDesk\rustdesk.exe",
-                os.path.join(os.getenv("LOCALAPPDATA", ""), "Programs", "RustDesk", "rustdesk.exe"),
+                os.path.join(localappdata, "Programs", "RustDesk", "rustdesk.exe"),
+                os.path.join(programdata, "RustDesk", "rustdesk.exe"),
             ]
             for path in exact_candidates:
                 if path and os.path.isfile(path):
+                    print(f"[RustDesk] Found via known path: {path}")
                     return path
 
-            # Search common directories for versioned portable exes (e.g. rustdesk-1.4.5-x86_64.exe)
-            search_dirs = [r"C:\Apps", r"C:\Tools", r"C:\Portable", os.path.expanduser("~\\Downloads")]
+            # Search common directories for versioned portable exes
+            # e.g. rustdesk-1.4.5-x86_64.exe
+            search_dirs = [
+                r"C:\Apps",
+                r"C:\Tools",
+                r"C:\Portable",
+                os.path.expanduser("~\\Downloads"),
+                os.path.expanduser("~\\Desktop"),
+            ]
             for directory in search_dirs:
                 matches = glob.glob(os.path.join(directory, "rustdesk*.exe"))
                 if matches:
+                    print(f"[RustDesk] Found via glob in {directory}: {matches[0]}")
                     return matches[0]
         else:
             candidates = [
@@ -623,26 +863,60 @@ class os_manager:
                 "/usr/bin/rustdesk",
                 "/usr/local/bin/rustdesk",
                 "/opt/rustdesk/rustdesk",
+                "/snap/bin/rustdesk",
             ]
             for path in candidates:
                 if path and os.path.isfile(path):
+                    print(f"[RustDesk] Found via known path: {path}")
                     return path
 
+        print("[RustDesk] Executable not found")
         return None
 
     def _get_rustdesk_config_paths(self):
-        """Returns a list of potential RustDesk config file paths for the current OS."""
+        """Returns a prioritised list of potential RustDesk config file paths."""
         if self.current_os == "Windows":
             appdata = os.getenv("APPDATA", "")
-            return [
+            localappdata = os.getenv("LOCALAPPDATA", "")
+            programdata = os.getenv("PROGRAMDATA", r"C:\ProgramData")
+            system_drive = os.getenv("SYSTEMDRIVE", "C:")
+
+            paths = [
+                # Current user
                 os.path.join(appdata, "RustDesk", "config", "RustDesk.toml"),
-                r"C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk\config\RustDesk.toml",
+                # LocalService account (used when RustDesk runs as a service)
+                os.path.join(system_drive, "\\", "Windows", "ServiceProfiles",
+                             "LocalService", "AppData", "Roaming",
+                             "RustDesk", "config", "RustDesk.toml"),
+                # SYSTEM account
+                os.path.join(system_drive, "\\", "Windows", "System32", "config",
+                             "systemprofile", "AppData", "Roaming",
+                             "RustDesk", "config", "RustDesk.toml"),
+                # Machine-wide / portable installs
+                os.path.join(programdata, "RustDesk", "config", "RustDesk.toml"),
+                os.path.join(localappdata, "RustDesk", "config", "RustDesk.toml"),
             ]
+
+            # Also sweep every user profile under %SYSTEMDRIVE%\Users
+            users_dir = os.path.join(system_drive, "\\", "Users")
+            if os.path.isdir(users_dir):
+                for entry in os.scandir(users_dir):
+                    if entry.is_dir():
+                        candidate = os.path.join(
+                            entry.path, "AppData", "Roaming",
+                            "RustDesk", "config", "RustDesk.toml"
+                        )
+                        if candidate not in paths:
+                            paths.append(candidate)
+
+            return paths
         else:
             home = os.path.expanduser("~")
             return [
                 os.path.join(home, ".config", "rustdesk", "RustDesk.toml"),
                 "/root/.config/rustdesk/RustDesk.toml",
+                "/var/lib/rustdesk/config/RustDesk.toml",
+                "/etc/rustdesk/RustDesk.toml",
             ]
 
     # IMPORTANT FOR DAN

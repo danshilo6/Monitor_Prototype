@@ -373,6 +373,7 @@ class OSManager:
                 self._save_timestamps(timestamps_file, current_timestamps)
             else:
                 print("DEBUG: No configuration changes detected")
+            print(f"DEBUG: configuration changed: {changed}")
             return changed
             
         except Exception as e:
