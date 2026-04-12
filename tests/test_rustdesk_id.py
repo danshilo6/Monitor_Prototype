@@ -173,71 +173,28 @@ class TestGetRustdeskId:
 
     # ------------------------------------------------------------------ enc_id decryption tests
 
-    def _make_enc_id_toml(self, plaintext_id: str, key_offset: int = 0) -> str:
-        """
-        Build a valid RustDesk 1.2+ style TOML with enc_id and key_pair.
-        key_offset allows testing non-zero-offset key slices (must be 0 or 16).
-        """
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-        # 32-byte first sub-array; encrypt using the 16-byte window at key_offset
-        key_bytes_32 = bytes(range(32))
-        aes_key = key_bytes_32[key_offset:key_offset + 16]
-        nonce = bytes(12)
-
-        ciphertext = AESGCM(aes_key).encrypt(nonce, plaintext_id.encode(), None)
-        b64 = base64.b64encode(ciphertext).decode()
-        enc_id = "00" + b64  # "00" version prefix
-
-        # Represent key_bytes_32 as a TOML inline integer array
-        key_array = ", ".join(str(b) for b in key_bytes_32)
-        return (
-            f"enc_id = '{enc_id}'\n"
-            f"password = 'irrelevant'\n"
-            f"salt = 'abc'\n"
-            f"key_pair = [\n"
-            f"    [{key_array}],\n"
-            f"    [1, 2, 3]\n"
-            f"]\n"
-        )
-
     def test_decodes_enc_id_when_no_plain_id(self, manager):
         """Falls back to enc_id decryption when the config has no plain 'id' key."""
-        toml = self._make_enc_id_toml("987654321")
+        key = (b"test-machine-uuid-fallback-key00" + b"\x00" * 32)[:32]
+        enc_id_val = self._make_nacl_enc_id("987654321", key)
+        toml = f"enc_id = '{enc_id_val}'\npassword = 'irrelevant'\n"
         with tempfile.TemporaryDirectory() as tmpdir:
             toml_path = self._write_toml(tmpdir, toml)
             with patch.object(manager, "_find_rustdesk_executable", return_value=None):
                 with patch.object(manager, "_get_rustdesk_config_paths", return_value=[toml_path]):
-                    assert manager.get_rustdesk_id() == "987654321"
-
-    def test_decodes_enc_id_with_offset_key(self, manager):
-        """Multi-candidate logic finds the correct key even when offset != 0."""
-        toml = self._make_enc_id_toml("111222333", key_offset=16)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            toml_path = self._write_toml(tmpdir, toml)
-            with patch.object(manager, "_find_rustdesk_executable", return_value=None):
-                with patch.object(manager, "_get_rustdesk_config_paths", return_value=[toml_path]):
-                    assert manager.get_rustdesk_id() == "111222333"
+                    with patch.object(manager, "_get_machine_uuid_bytes", return_value=[key]):
+                        assert manager.get_rustdesk_id() == "987654321"
 
     def test_plain_id_takes_priority_over_enc_id(self, manager):
         """When both plain 'id' and 'enc_id' are present, plain 'id' wins."""
-        toml = "id = 'direct-id'\n" + self._make_enc_id_toml("should-not-be-returned")
+        key = (b"test-machine-uuid-fallback-key00" + b"\x00" * 32)[:32]
+        enc_id_val = self._make_nacl_enc_id("should-not-be-returned", key)
+        toml = f"id = 'direct-id'\nenc_id = '{enc_id_val}'\npassword = 'irrelevant'\n"
         with tempfile.TemporaryDirectory() as tmpdir:
             toml_path = self._write_toml(tmpdir, toml)
             with patch.object(manager, "_find_rustdesk_executable", return_value=None):
                 with patch.object(manager, "_get_rustdesk_config_paths", return_value=[toml_path]):
                     assert manager.get_rustdesk_id() == "direct-id"
-
-    def test_decode_enc_id_returns_none_without_key_pair(self, manager):
-        """_decode_enc_id returns None when key_pair_raw is None."""
-        assert manager._decode_enc_id("00AAAA", None) is None
-
-    def test_decode_enc_id_returns_none_on_bad_ciphertext(self, manager):
-        """_decode_enc_id returns None when all key candidates fail authentication."""
-        key_array = ", ".join(str(b) for b in range(32))
-        key_pair_raw = f"[[{key_array}], [1, 2, 3]]"
-        # "00" prefix + random base64 that will fail AES-GCM authentication for all candidates
-        assert manager._decode_enc_id("00aGVsbG8=", key_pair_raw) is None
 
     # ------------------------------------------------------------------ NaCl secretbox tests
 
@@ -275,8 +232,8 @@ class TestGetRustdeskId:
         with patch.object(manager, "_get_machine_uuid_bytes", return_value=[]):
             assert manager._decode_enc_id_nacl("00AAAA") is None
 
-    def test_nacl_is_tried_after_aes_gcm_fails(self, manager):
-        """get_rustdesk_id falls back to NaCl after AES-GCM candidates all fail."""
+    def test_decodes_enc_id_nacl_with_key_pair_present(self, manager):
+        """get_rustdesk_id uses NaCl decryption even when key_pair field is present."""
         key = b"uuid-key-padded-to-32-bytes--000"
         enc_id = self._make_nacl_enc_id("111222333", key)
         toml = f"enc_id = '{enc_id}'\nsalt = 'abc'\nkey_pair = []\n"

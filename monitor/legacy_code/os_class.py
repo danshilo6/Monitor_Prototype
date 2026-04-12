@@ -18,10 +18,6 @@ import tempfile
 # import time
 import sys
 from pathlib import Path
-try:
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _AESGCM
-except ImportError:
-    _AESGCM = None
 #from monitor.utils.path_utils import get_app_root
 if sys.platform.startswith("Windows"):
     from win32com.client import Dispatch
@@ -609,7 +605,6 @@ class os_manager:
 
                 plain_id = None
                 enc_id = None
-                key_pair_raw = None
 
                 for line in contents.splitlines():
                     # Plain unencrypted ID (older RustDesk versions)
@@ -621,25 +616,12 @@ class os_manager:
                     if m:
                         enc_id = m.group(1).strip()
 
-                # key_pair is a multi-line TOML array — extract via block search
-                kp_match = re.search(r"key_pair\s*=\s*(\[.*?\])", contents, re.DOTALL)
-                if kp_match:
-                    key_pair_raw = kp_match.group(1)
-
                 if plain_id:
                     print(f"[RustDesk] ID found via plain 'id' in {config_path}: {plain_id}")
                     return plain_id
 
                 if enc_id:
-                    print(f"[RustDesk] Found enc_id='{enc_id}', key_pair present={key_pair_raw is not None}")
-
-                    # Method A: AES-GCM using key_pair bytes (some custom builds)
-                    decoded = self._decode_enc_id(enc_id, key_pair_raw)
-                    if decoded:
-                        print(f"[RustDesk] ID decoded (AES-GCM) from {config_path}: {decoded}")
-                        return decoded
-
-                    # Method B: NaCl secretbox using machine UUID (standard RustDesk)
+                    print(f"[RustDesk] Found enc_id='{enc_id}'")
                     decoded = self._decode_enc_id_nacl(enc_id)
                     if decoded:
                         print(f"[RustDesk] ID decoded (NaCl) from {config_path}: {decoded}")
@@ -651,76 +633,6 @@ class os_manager:
 
         print("[RustDesk] ID not found — RustDesk may not be installed or not yet registered")
         return None
-
-    def _decode_enc_id(self, enc_id: str, key_pair_raw: str) -> "str | None":
-        """
-        Decode a RustDesk enc_id value using the private key stored in key_pair.
-
-        RustDesk 1.2+ encrypts the ID with AES-GCM:
-          - Nonce  = 12 zero bytes
-          - Input  = base64-decode(enc_id[2:])  (strip 2-char '00' version prefix)
-          - Key    = 16 or 32 bytes from key_pair — exact slice varies by RustDesk version
-
-        We try every plausible 16-byte and 32-byte window across both sub-arrays.
-        """
-        if _AESGCM is None:
-            print("[RustDesk] enc_id fallback unavailable: 'cryptography' package not installed")
-            return None
-        if not key_pair_raw:
-            print("[RustDesk] enc_id decode skipped: key_pair not found in config")
-            return None
-        try:
-            # Parse every inner byte array from the key_pair TOML block.
-            # key_pair = [ [b0, b1, ...], [b0, b1, ...] ]
-            sub_arrays = []
-            for arr_match in re.finditer(r"\[\s*([\d\s,]+?)\s*\]", key_pair_raw):
-                arr_bytes = bytes(
-                    int(x.strip()) for x in arr_match.group(1).split(",") if x.strip()
-                )
-                if len(arr_bytes) >= 16:
-                    sub_arrays.append(arr_bytes)
-            print(f"[RustDesk] Parsed {len(sub_arrays)} key sub-array(s): "
-                  f"{[len(a) for a in sub_arrays]} bytes")
-
-            if not sub_arrays:
-                print("[RustDesk] enc_id decode failed: could not parse any key sub-array")
-                return None
-
-            # Strip 2-char '00' version prefix, then base64-decode (pad if needed)
-            b64 = enc_id[2:]
-            padding = (4 - len(b64) % 4) % 4
-            ciphertext = base64.b64decode(b64 + "=" * padding)
-            print(f"[RustDesk] Ciphertext length: {len(ciphertext)} bytes")
-
-            nonce = bytes(12)
-
-            # Build all key candidates: every aligned 16-byte AND 32-byte window
-            # from each sub-array, in order of most-likely-first.
-            key_candidates = []
-            for arr_idx, arr in enumerate(sub_arrays):
-                for key_len in (16, 32):
-                    for offset in range(0, len(arr) - key_len + 1, key_len):
-                        key_candidates.append((arr_idx, offset, arr[offset:offset + key_len]))
-
-            print(f"[RustDesk] Trying {len(key_candidates)} key candidate(s)...")
-            for arr_idx, offset, key_bytes in key_candidates:
-                try:
-                    plaintext = _AESGCM(key_bytes).decrypt(nonce, ciphertext, None)
-                    result = plaintext.decode("utf-8")
-                    print(
-                        f"[RustDesk] Decryption succeeded — array[{arr_idx}] "
-                        f"bytes[{offset}:{offset + len(key_bytes)}] "
-                        f"({len(key_bytes) * 8}-bit key): {result}"
-                    )
-                    return result
-                except Exception:
-                    pass
-
-            print(f"[RustDesk] All {len(key_candidates)} key candidate(s) failed authentication")
-            return None
-        except Exception as e:
-            print(f"[RustDesk] enc_id decode error: {e}")
-            return None
 
     def _get_machine_uuid_bytes(self) -> list:
         """
