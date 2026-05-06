@@ -12,7 +12,7 @@ class ConfigService:
 
     def __init__(self, config_path: str = None):
         self.logger = get_logger("monitor.services.config_service")
-        self.MONITOR_VERSION = "06_04_26"
+        self.MONITOR_VERSION = "14_04_26"
         
         # Use absolute path relative to executable
         if config_path is None:

@@ -16,7 +16,7 @@ class EmptyTableView(QTableView):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.empty_message = "Everything is working!\nThere are no alerts"
+        self.empty_message = "No failing devices detected"
     
     def paintEvent(self, event):
         """Override paint event to show empty message when table is empty"""

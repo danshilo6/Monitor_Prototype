@@ -15,6 +15,7 @@ class AlertType(Enum):
     THREAD = "thread"
     COMPORT = "comport"
     THI = "THI_sensor"
+    CONVERTER = "converter"
     UNKNOWN = "unknown"
 
 @dataclass

@@ -2,6 +2,7 @@ import aiohttp
 import base64
 import os
 import requests
+from monitor.log_setup import get_logger
 import zipfile
 import tempfile
 import traceback
@@ -35,6 +36,7 @@ class ServerManager:
     def __init__(self,parent = None) -> None:
         self.parent = parent
         self.os_manager = os_manager
+        self.logger = get_logger("monitor.legacy_code.server_class")
         #check if ran as unfrozen code
         #if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath#(__file__)), 'frozen')):
         
@@ -1554,114 +1556,236 @@ class ServerManager:
         """
         # Check if we're on Linux using the same method as os_class.py
         is_linux = platform.system() == "Linux"
-        
+
+        print(f"=== [download_monitor_downloader] START ===")
+        self.logger.info("=== [download_monitor_downloader] START ===")
+        print(f"  save_path      : {save_path!r}")
+        self.logger.info(f"  save_path      : {save_path!r}")
+        print(f"  platform       : {platform.system()!r}")
+        self.logger.info(f"  platform       : {platform.system()!r}")
+        print(f"  is_linux       : {is_linux}")
+        self.logger.info(f"  is_linux       : {is_linux}")
+        print(f"  base_url       : {self.base_url!r}")
+        self.logger.info(f"  base_url       : {self.base_url!r}")
+
         if is_linux:
             url = f"{self.base_url}/download_monitor_downloader?linux=true"
-            print("DEBUG: Detected Linux system - requesting Linux version of monitor downloader")
+            print(f"  url (linux)    : {url!r}")
+            self.logger.info(f"  url (linux)    : {url!r}")
         else:
             url = f"{self.base_url}/download_monitor_downloader"
-            print("DEBUG: Detected non-Linux system - requesting default version of monitor downloader")
-        
+            print(f"  url (default)  : {url!r}")
+            self.logger.info(f"  url (default)  : {url!r}")
+
+        zip_path = None  # ensure defined for except blocks
+
         try:
-            print(f"DEBUG: Downloading monitor downloader ZIP from {url}")
-            response = requests.get(url, stream=True, timeout=(30, 3600))  # Match monitor download timeout
+            print(f"  [step 1] Sending GET request to {url!r} ...")
+            self.logger.info(f"  [step 1] Sending GET request to {url!r} ...")
+            response = requests.get(url, stream=True, timeout=(30, 3600))
+            print(f"  [step 1] HTTP status: {response.status_code}  reason: {response.reason!r}")
+            self.logger.info(f"  [step 1] HTTP status: {response.status_code}  reason: {response.reason!r}")
+            print(f"  [step 1] Response headers: {dict(response.headers)}")
+            self.logger.info(f"  [step 1] Response headers: {dict(response.headers)}")
             response.raise_for_status()
-            
+
             total_size = int(response.headers.get("content-length") or 0)
-            downloaded = 0
-            
-            print(f"DEBUG: Downloading monitor downloader ZIP ({self._format_file_size(total_size)})")
-            
+            print(f"  [step 1] Content-Length: {total_size} bytes ({self._format_file_size(total_size)})")
+            self.logger.info(f"  [step 1] Content-Length: {total_size} bytes ({self._format_file_size(total_size)})")
+
             # Create directory if needed
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            
+            save_dir = os.path.dirname(save_path)
+            print(f"  [step 2] Ensuring save directory exists: {save_dir!r}")
+            self.logger.info(f"  [step 2] Ensuring save directory exists: {save_dir!r}")
+            os.makedirs(save_dir, exist_ok=True)
+            print(f"  [step 2] Directory ready: {os.path.exists(save_dir)}")
+            self.logger.info(f"  [step 2] Directory ready: {os.path.exists(save_dir)}")
+
             # Download to ZIP file first
-            zip_path = save_path.replace('.exe', '.zip')  # Create zip filename
-            
+            zip_path = save_path.replace('.exe', '.zip') if save_path.endswith('.exe') else save_path + '.zip'
+            print(f"  [step 3] Downloading ZIP to: {zip_path!r}")
+            self.logger.info(f"  [step 3] Downloading ZIP to: {zip_path!r}")
+
+            downloaded = 0
+            chunk_count = 0
+            last_logged_mb = 0
             with open(zip_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if not chunk:
                         continue
                     f.write(chunk)
                     downloaded += len(chunk)
-                    
-                    if total_size and downloaded % (1024 * 1024) == 0:
+                    chunk_count += 1
+                    current_mb = downloaded // (1024 * 1024)
+                    if total_size and current_mb > last_logged_mb:
                         progress = downloaded / total_size * 100
-                        print(f"DEBUG: Download progress: {progress:.1f}% ({self._format_file_size(downloaded)}/{self._format_file_size(total_size)})")
-            
-            print(f"DEBUG: ZIP download completed: {zip_path}")
-            
+                        msg = f"  [step 3] Progress: {progress:.1f}%  {self._format_file_size(downloaded)}/{self._format_file_size(total_size)}"
+                        print(msg)
+                        self.logger.debug(msg)
+                        last_logged_mb = current_mb
+
+            zip_size = os.path.getsize(zip_path) if os.path.exists(zip_path) else -1
+            print(f"  [step 3] Download complete | total_bytes={downloaded} | chunks={chunk_count} | file_size_on_disk={zip_size}")
+            self.logger.info(f"  [step 3] Download complete | total_bytes={downloaded} | chunks={chunk_count} | file_size_on_disk={zip_size}")
+
             # Validate it's a ZIP file
-            if not zipfile.is_zipfile(zip_path):
-                print(f"DEBUG: Downloaded file is not a valid ZIP archive")
+            print(f"  [step 4] Validating ZIP file: {zip_path!r}")
+            self.logger.info(f"  [step 4] Validating ZIP file: {zip_path!r}")
+            is_valid_zip = zipfile.is_zipfile(zip_path)
+            print(f"  [step 4] Is valid ZIP: {is_valid_zip}")
+            self.logger.info(f"  [step 4] Is valid ZIP: {is_valid_zip}")
+            if not is_valid_zip:
+                # Read first bytes for diagnostic
+                try:
+                    with open(zip_path, 'rb') as dbf:
+                        header_bytes = dbf.read(64)
+                    print(f"  [step 4] File header bytes (hex): {header_bytes.hex()}")
+                    self.logger.error(f"  [step 4] File header bytes (hex): {header_bytes.hex()}")
+                    print(f"  [step 4] File header bytes (repr): {header_bytes!r}")
+                    self.logger.error(f"  [step 4] File header bytes (repr): {header_bytes!r}")
+                except Exception as hdr_err:
+                    print(f"  [step 4] Could not read file header: {hdr_err}")
+                    self.logger.warning(f"  [step 4] Could not read file header: {hdr_err}")
                 os.remove(zip_path)
+                print(f"  [step 4] Deleted invalid ZIP file, returning False")
+                self.logger.error("  [step 4] Deleted invalid ZIP file, returning False")
                 return False
-            
+
             # Extract the ZIP file
             extract_dir = os.path.dirname(save_path)
-            
+            print(f"  [step 5] Extracting ZIP to: {extract_dir!r}")
+            self.logger.info(f"  [step 5] Extracting ZIP to: {extract_dir!r}")
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                name_list = zip_ref.namelist()
+                print(f"  [step 5] ZIP contains {len(name_list)} entries: {name_list}")
+                self.logger.info(f"  [step 5] ZIP contains {len(name_list)} entries: {name_list}")
                 zip_ref.extractall(extract_dir)
-            
-            print(f"DEBUG: Extracted ZIP contents to: {extract_dir}")
-            
+            print(f"  [step 5] Extraction complete")
+            self.logger.info("  [step 5] Extraction complete")
+
+            # List extract_dir after extraction
+            try:
+                extracted_contents = os.listdir(extract_dir)
+                print(f"  [step 5] extract_dir contents after extraction ({len(extracted_contents)} items): {extracted_contents}")
+                self.logger.info(f"  [step 5] extract_dir contents after extraction ({len(extracted_contents)} items): {extracted_contents}")
+            except Exception as list_err:
+                print(f"  [step 5] Could not list extract_dir: {list_err}")
+                self.logger.warning(f"  [step 5] Could not list extract_dir: {list_err}")
+
             # Find the executable in extracted files
             executable_name = "monitor_downloader.exe" if platform.system() == "Windows" else "monitor_downloader"
-            
-            # Look for the executable
+            print(f"  [step 6] Searching for executable: {executable_name!r} under {extract_dir!r}")
+            self.logger.info(f"  [step 6] Searching for executable: {executable_name!r} under {extract_dir!r}")
+
             found_executable = None
             for root, dirs, files in os.walk(extract_dir):
+                print(f"  [step 6] Walking: {root!r}  files={files}")
+                self.logger.debug(f"  [step 6] Walking: {root!r}  files={files}")
                 for file in files:
                     if file.lower() == executable_name.lower():
                         found_executable = os.path.join(root, file)
+                        print(f"  [step 6] FOUND executable: {found_executable!r}")
+                        self.logger.info(f"  [step 6] FOUND executable: {found_executable!r}")
                         break
                 if found_executable:
                     break
-            
+
             if not found_executable:
-                print(f"DEBUG: Could not find {executable_name} in extracted files")
+                print(f"  [step 6] ERROR: Could not find {executable_name!r} in extracted files under {extract_dir!r}")
+                self.logger.error(f"  [step 6] ERROR: Could not find {executable_name!r} in extracted files under {extract_dir!r}")
+                # List all extracted files for diagnosis
+                for root, dirs, files in os.walk(extract_dir):
+                    for file in files:
+                        fpath = os.path.join(root, file)
+                        try:
+                            fsize = os.path.getsize(fpath)
+                        except Exception:
+                            fsize = -1
+                        print(f"  [step 6]   Found file: {fpath!r}  size={fsize}")
+                        self.logger.info(f"  [step 6]   Found file: {fpath!r}  size={fsize}")
                 os.remove(zip_path)
                 return False
-            
+
             # Move executable to final location if it's not already there
+            print(f"  [step 7] found_executable={found_executable!r}  save_path={save_path!r}")
+            self.logger.info(f"  [step 7] found_executable={found_executable!r}  save_path={save_path!r}")
             if found_executable != save_path:
                 if os.path.exists(save_path):
+                    print(f"  [step 7] Removing existing file at save_path: {save_path!r}")
+                    self.logger.info(f"  [step 7] Removing existing file at save_path: {save_path!r}")
                     os.remove(save_path)
+                print(f"  [step 7] Renaming {found_executable!r} -> {save_path!r}")
+                self.logger.info(f"  [step 7] Renaming {found_executable!r} -> {save_path!r}")
                 os.rename(found_executable, save_path)
-                print(f"DEBUG: Moved executable to: {save_path}")
-            
+                print(f"  [step 7] Rename complete")
+                self.logger.info("  [step 7] Rename complete")
+            else:
+                print(f"  [step 7] Executable already at correct location, no move needed")
+                self.logger.info("  [step 7] Executable already at correct location, no move needed")
+
             # Set executable permissions
             if platform.system() == "Windows":
-                os.chmod(save_path, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | 
-                        stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                perms = stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
             else:
-                os.chmod(save_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
-            
+                perms = stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH
+            print(f"  [step 8] Setting permissions on {save_path!r}: {oct(perms)}")
+            self.logger.info(f"  [step 8] Setting permissions on {save_path!r}: {oct(perms)}")
+            os.chmod(save_path, perms)
+            try:
+                actual_mode = oct(stat.S_IMODE(os.stat(save_path).st_mode))
+                print(f"  [step 8] Permissions set successfully, actual mode: {actual_mode}")
+                self.logger.info(f"  [step 8] Permissions set successfully, actual mode: {actual_mode}")
+            except Exception as mode_err:
+                print(f"  [step 8] Could not verify permissions: {mode_err}")
+                self.logger.warning(f"  [step 8] Could not verify permissions: {mode_err}")
+
             # Clean up ZIP file
+            print(f"  [step 9] Removing ZIP file: {zip_path!r}")
+            self.logger.info(f"  [step 9] Removing ZIP file: {zip_path!r}")
             os.remove(zip_path)
-            print(f"DEBUG: Cleaned up ZIP file")
-            
+            print(f"  [step 9] ZIP removed")
+            self.logger.info("  [step 9] ZIP removed")
+
             # Verify final executable
-            if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
-                print(f"DEBUG: Monitor downloader successfully extracted: {save_path}")
-                print(f"DEBUG: Final file size: {self._format_file_size(os.path.getsize(save_path))}")
+            final_exists = os.path.exists(save_path)
+            final_size = os.path.getsize(save_path) if final_exists else 0
+            print(f"  [step 10] Final verification: exists={final_exists}  size={final_size} bytes  path={save_path!r}")
+            self.logger.info(f"  [step 10] Final verification: exists={final_exists}  size={final_size} bytes  path={save_path!r}")
+            if final_exists and final_size > 0:
+                print(f"  === [download_monitor_downloader] SUCCESS: {save_path!r} ({self._format_file_size(final_size)}) ===")
+                self.logger.info(f"  === [download_monitor_downloader] SUCCESS: {save_path!r} ({self._format_file_size(final_size)}) ===")
                 return True
             else:
-                print(f"DEBUG: Final executable validation failed")
+                print(f"  [step 10] ERROR: Final executable validation failed (exists={final_exists}, size={final_size})")
+                self.logger.error(f"  [step 10] ERROR: Final executable validation failed (exists={final_exists}, size={final_size})")
                 return False
-            
+
         except requests.exceptions.RequestException as e:
-            print(f"DEBUG: Request error downloading monitor downloader: {e}")
+            tb = traceback.format_exc()
+            print(f"  [download_monitor_downloader] REQUEST ERROR: {type(e).__name__}: {e}\n{tb}")
+            self.logger.error(f"  [download_monitor_downloader] REQUEST ERROR: {type(e).__name__}: {e}\n{tb}")
             return False
         except zipfile.BadZipFile as e:
-            print(f"DEBUG: Invalid ZIP file: {e}")
-            if 'zip_path' in locals() and os.path.exists(zip_path):
+            tb = traceback.format_exc()
+            print(f"  [download_monitor_downloader] BAD ZIP ERROR: {type(e).__name__}: {e}\n{tb}")
+            self.logger.error(f"  [download_monitor_downloader] BAD ZIP ERROR: {type(e).__name__}: {e}\n{tb}")
+            if zip_path and os.path.exists(zip_path):
                 os.remove(zip_path)
+                print(f"  Cleaned up bad ZIP: {zip_path!r}")
+                self.logger.info(f"  Cleaned up bad ZIP: {zip_path!r}")
             return False
         except Exception as e:
-            print(f"DEBUG: Error downloading monitor downloader: {e}")
-            if 'zip_path' in locals() and os.path.exists(zip_path):
-                os.remove(zip_path)
+            tb = traceback.format_exc()
+            print(f"  [download_monitor_downloader] UNEXPECTED ERROR: {type(e).__name__}: {e}\n{tb}")
+            self.logger.error(f"  [download_monitor_downloader] UNEXPECTED ERROR: {type(e).__name__}: {e}\n{tb}")
+            if zip_path and os.path.exists(zip_path):
+                try:
+                    os.remove(zip_path)
+                    print(f"  Cleaned up ZIP after error: {zip_path!r}")
+                    self.logger.info(f"  Cleaned up ZIP after error: {zip_path!r}")
+                except Exception as cleanup_err:
+                    print(f"  Failed to clean up ZIP after error: {cleanup_err}")
+                    self.logger.warning(f"  Failed to clean up ZIP after error: {cleanup_err}")
             return False
 
 if __name__ == '__main__':

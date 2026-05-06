@@ -475,7 +475,7 @@ class DecisionEngine(QObject):
         # Map device types to evaluation logic - use current config values
         if device_type in [DeviceType.FAN.value, DeviceType.SPRINKLER.value, 
                           DeviceType.GROUP.value, DeviceType.COMPORT.value, 
-                          DeviceType.THI.value]:
+                          DeviceType.THI.value.lower(), DeviceType.CONVERTER.value]:
             evaluator = self._get_evaluator_with_current_config("consecutive_count")
             return evaluator.evaluate(device)
             
@@ -577,48 +577,95 @@ class DecisionEngine(QObject):
         Download monitor downloader and replace monitor in startup folder.
         Handles both Windows and Linux startup systems.
         """
+        import traceback as _traceback
         try:
-            self.logger.info("Preparing monitor downloader...")
-            
+            self.logger.info("=== START: _prepare_monitor_downloader ===")
+            print("=== START: _prepare_monitor_downloader ===")
+
             # Step 1: Download monitor downloader from server
+            self.logger.info("[step 1] Calling server_manager.download_monitor_downloader ...")
+            print("[step 1] Calling server_manager.download_monitor_downloader ...")
             downloader_path = self.server_manager.download_monitor_downloader()
+            self.logger.info(f"[step 1] download_monitor_downloader returned: {downloader_path!r}")
+            print(f"[step 1] download_monitor_downloader returned: {downloader_path!r}")
+
             if not downloader_path:
-                self.logger.error("Failed to download monitor downloader")
+                self.logger.error("[step 1] FAIL: download_monitor_downloader returned None/empty — aborting _prepare_monitor_downloader")
+                print("[step 1] FAIL: download_monitor_downloader returned None/empty — aborting")
                 return
-                
+
             # Step 2: Make sure the downloader is executable (important for Linux)
             current_os = getattr(self.os_manager, 'current_os', None)
+            self.logger.info(f"[step 2] current_os={current_os!r}  downloader_path={downloader_path!r}")
+            print(f"[step 2] current_os={current_os!r}  downloader_path={downloader_path!r}")
+
+            path_exists = os.path.exists(downloader_path)
+            self.logger.info(f"[step 2] downloader file exists: {path_exists}")
+            print(f"[step 2] downloader file exists: {path_exists}")
+            if path_exists:
+                try:
+                    file_stat = os.stat(downloader_path)
+                    self.logger.info(
+                        f"[step 2] file stat: size={file_stat.st_size}  mode={oct(file_stat.st_mode)}"
+                    )
+                    print(f"[step 2] file stat: size={file_stat.st_size}  mode={oct(file_stat.st_mode)}")
+                except Exception as stat_err:
+                    self.logger.warning(f"[step 2] Could not stat downloader file: {stat_err}")
+                    print(f"[step 2] Could not stat downloader file: {stat_err}")
+
             if current_os == "Linux":
-                import os
+                self.logger.info(f"[step 2] Linux: setting chmod 0o755 on {downloader_path!r}")
+                print(f"[step 2] Linux: setting chmod 0o755 on {downloader_path!r}")
                 os.chmod(downloader_path, 0o755)
-                self.logger.info(f"Set executable permissions for downloader: {downloader_path}")
-                
+                self.logger.info(f"[step 2] chmod done")
+                print(f"[step 2] chmod done")
+
             # Step 3: Remove current monitor from startup folder
+            self.logger.info("[step 3] Calling _remove_monitor_from_startup ...")
+            print("[step 3] Calling _remove_monitor_from_startup ...")
             self._remove_monitor_from_startup()
-            
+            self.logger.info("[step 3] _remove_monitor_from_startup completed")
+            print("[step 3] _remove_monitor_from_startup completed")
+
             # Step 4: Add downloader to startup folder
+            self.logger.info(f"[step 4] Calling os_manager.create_shortcut_and_move_to_startup({downloader_path!r}) ...")
+            print(f"[step 4] Calling os_manager.create_shortcut_and_move_to_startup({downloader_path!r}) ...")
             startup_shortcut = self.os_manager.create_shortcut_and_move_to_startup(downloader_path)
+            self.logger.info(f"[step 4] create_shortcut_and_move_to_startup returned: {startup_shortcut!r}")
+            print(f"[step 4] create_shortcut_and_move_to_startup returned: {startup_shortcut!r}")
+
             if startup_shortcut:
-                self.logger.info(f"Monitor downloader added to startup: {startup_shortcut}")
-                print(f"Monitor downloader added to startup: {startup_shortcut}")
-                
+                self.logger.info(f"[step 4] Monitor downloader added to startup: {startup_shortcut}")
+                print(f"[step 4] Monitor downloader added to startup: {startup_shortcut}")
+
                 # For Linux, verify the desktop file was created properly
-                if current_os == "Linux" and startup_shortcut.endswith('.desktop'):
+                if current_os == "Linux" and str(startup_shortcut).endswith('.desktop'):
                     try:
                         with open(startup_shortcut, 'r') as f:
                             content = f.read()
-                            self.logger.info(f"Created desktop file content:\n{content}")
+                        self.logger.info(f"[step 4] Created desktop file content:\n{content}")
+                        print(f"[step 4] Created desktop file content:\n{content}")
                     except Exception as e:
-                        self.logger.warning(f"Could not verify desktop file content: {e}")
-                
+                        self.logger.warning(f"[step 4] Could not verify desktop file content: {e}")
+                        print(f"[step 4] Could not verify desktop file content: {e}")
+
                 # Step 5: Set flag to restart computer (downloader will run on next boot)
+                self.logger.info("[step 5] Setting pending_restart_after_update flag ...")
+                print("[step 5] Setting pending_restart_after_update flag ...")
                 self.config_service.set("system", "pending_restart_after_update", True)
-                self.logger.info("Restart flag set - system will restart to run downloader")
+                self.logger.info("[step 5] Restart flag set — system will restart to run downloader")
+                print("[step 5] Restart flag set — system will restart to run downloader")
             else:
-                self.logger.error("Failed to add monitor downloader to startup")
-                
+                self.logger.error("[step 4] FAIL: create_shortcut_and_move_to_startup returned None/empty — shortcut not created")
+                print("[step 4] FAIL: create_shortcut_and_move_to_startup returned None/empty")
+
+            self.logger.info("=== END: _prepare_monitor_downloader ===")
+            print("=== END: _prepare_monitor_downloader ===")
+
         except Exception as e:
-            self.logger.error(f"Error preparing monitor downloader: {e}")
+            tb = _traceback.format_exc()
+            self.logger.error(f"Error preparing monitor downloader: {type(e).__name__}: {e}\n{tb}")
+            print(f"Error preparing monitor downloader: {type(e).__name__}: {e}\n{tb}")
     
     def _remove_monitor_from_startup(self) -> None:
         """Remove current monitor from startup folder."""

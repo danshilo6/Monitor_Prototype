@@ -219,7 +219,37 @@ class ServerManager:
         except Exception as e:
             self.logger.error(f"Failed to check device ID: {e}")
             return False, False
-    
+
+    def register_and_get_signed_id(self, device_id: str, location: str, monitor_version: str = "unknown") -> tuple:
+        """
+        Call POST /register_and_get_signed_id. Registers the device if new,
+        and returns approval status + signature.
+
+        Returns:
+            (approved, signature) — approved=True means the device is approved,
+            signature is the hex string to store as signed_id.
+        """
+        url = f"{self.legacy_server.base_url}/register_and_get_signed_id"
+        payload = {
+            "device_id": device_id,
+            "location": location,
+            "monitor_version": monitor_version,
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                approved = data.get("approved", False)
+                signature = data.get("signature")
+                self.logger.info(f"register_and_get_signed_id: approved={approved}")
+                return approved, signature
+            else:
+                self.logger.error(f"register_and_get_signed_id HTTP {response.status_code}: {response.text}")
+                return False, None
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"register_and_get_signed_id request failed: {e}")
+            return False, None
+
     def remove_id_from_server(self, device_id, password):
         """Remove device ID from server."""
         try:
@@ -556,24 +586,69 @@ class ServerManager:
             str: Path to downloaded downloader executable, or None if failed
         """
         try:
-            self.logger.info("Downloading monitor downloader from server")
-            
+            self.logger.info("=== START: download_monitor_downloader ===")
+            print("=== START: download_monitor_downloader ===")
+
             # Get download path (save to monitor directory)
             monitor_dir = self.os_manager.get_monitor_dir_path()
-            downloader_filename = "monitor_downloader.exe" if self.os_manager.current_os == "Windows" else "monitor_downloader"
-            downloader_path = os.path.join(monitor_dir, downloader_filename)
-            
+            self.logger.info(f"Monitor dir path: {monitor_dir!r}  (type={type(monitor_dir).__name__})")
+            print(f"Monitor dir path: {monitor_dir!r}  (type={type(monitor_dir).__name__})")
+
+            current_os = self.os_manager.current_os
+            downloader_filename = "monitor_downloader.exe" if current_os == "Windows" else "monitor_downloader"
+            downloader_path = os.path.join(str(monitor_dir), downloader_filename)
+            self.logger.info(f"OS: {current_os!r} | downloader_filename: {downloader_filename!r} | downloader_path: {downloader_path!r}")
+            print(f"OS: {current_os!r} | downloader_filename: {downloader_filename!r} | downloader_path: {downloader_path!r}")
+
+            # Check if monitor dir exists before download
+            monitor_dir_exists = os.path.exists(str(monitor_dir))
+            self.logger.info(f"Monitor dir exists: {monitor_dir_exists}")
+            print(f"Monitor dir exists: {monitor_dir_exists}")
+            if monitor_dir_exists:
+                try:
+                    dir_contents = os.listdir(str(monitor_dir))
+                    self.logger.info(f"Monitor dir contents ({len(dir_contents)} items): {dir_contents}")
+                    print(f"Monitor dir contents ({len(dir_contents)} items): {dir_contents}")
+                except Exception as list_err:
+                    self.logger.warning(f"Could not list monitor dir: {list_err}")
+                    print(f"Could not list monitor dir: {list_err}")
+
             # Download from server using the legacy implementation
+            self.logger.info(f"Calling legacy_server.download_monitor_downloader with save_path={downloader_path!r}")
+            print(f"Calling legacy_server.download_monitor_downloader with save_path={downloader_path!r}")
             success = self.legacy_server.download_monitor_downloader(downloader_path)
-            
-            if success and os.path.exists(downloader_path):
+            self.logger.info(f"legacy_server.download_monitor_downloader returned: {success!r}")
+            print(f"legacy_server.download_monitor_downloader returned: {success!r}")
+
+            path_exists_after = os.path.exists(downloader_path)
+            self.logger.info(f"Downloader path exists after download: {path_exists_after} | path: {downloader_path!r}")
+            print(f"Downloader path exists after download: {path_exists_after} | path: {downloader_path!r}")
+
+            if path_exists_after:
+                try:
+                    file_size = os.path.getsize(downloader_path)
+                    self.logger.info(f"Downloader file size: {file_size} bytes")
+                    print(f"Downloader file size: {file_size} bytes")
+                except Exception as size_err:
+                    self.logger.warning(f"Could not get file size: {size_err}")
+
+            if success and path_exists_after:
                 self.logger.info(f"Monitor downloader downloaded successfully: {downloader_path}")
+                print(f"=== END (SUCCESS): download_monitor_downloader -> {downloader_path!r} ===")
                 return downloader_path
             else:
-                self.logger.error("Monitor downloader download failed")
+                self.logger.error(
+                    f"Monitor downloader download failed | success={success!r} | path_exists={path_exists_after} | path={downloader_path!r}"
+                )
+                print(
+                    f"=== END (FAIL): download_monitor_downloader | success={success!r} | path_exists={path_exists_after} ==="
+                )
                 return None
-                
+
         except Exception as e:
-            self.logger.error(f"Error downloading monitor downloader: {e}")
+            import traceback
+            tb = traceback.format_exc()
+            self.logger.error(f"Error downloading monitor downloader: {e}\n{tb}")
+            print(f"Error downloading monitor downloader: {e}\n{tb}")
             return None    
 

@@ -5,6 +5,7 @@ from PySide6.QtCore import Qt
 from monitor.gui.widgets.navigation_bar import NavigationBar
 from monitor.gui.widgets.custom_title_bar import CustomTitleBarWindow
 from monitor.gui.pages.alerts_page import AlertsPage
+from monitor.gui.pages.devices_page import DevicesPage
 from monitor.gui.pages.restart_history_page import RestartHistoryPage
 from monitor.gui.pages.contacts_page import ContactsPage
 from monitor.gui.pages.settings_page import SettingsPage
@@ -114,6 +115,7 @@ class MainWindow(CustomTitleBarWindow):
                 "main_window",
                 "navigation_bar",
                 "alerts",
+                "devices",
                 "restart_history",
                 "contacts",
                 "settings"
@@ -285,6 +287,8 @@ class MainWindow(CustomTitleBarWindow):
         if page_name == "alerts":
             # Alerts page uses signals and Model/View pattern
             return AlertsPage()
+        elif page_name == "devices":
+            return DevicesPage()
         elif page_name == "restarts":
             # Restart history page uses Model/View pattern
             return RestartHistoryPage()

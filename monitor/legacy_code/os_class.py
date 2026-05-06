@@ -1399,36 +1399,103 @@ $Shortcut.Save()
         Returns:
             Path to the shortcut in the startup folder, or None if operation failed
         """
-        if not os.path.exists(file_path):
-            print(f"File not found: {file_path}")
+        import traceback as _traceback
+
+        print(f"=== [create_shortcut_and_move_to_startup] START ===")
+        print(f"  file_path : {file_path!r}")
+        print(f"  current_os: {self.current_os!r}")
+
+        file_exists = os.path.exists(file_path)
+        print(f"  file_path exists: {file_exists}")
+        if file_exists:
+            try:
+                fstat = os.stat(file_path)
+                print(f"  file stat: size={fstat.st_size}  mode={oct(fstat.st_mode)}")
+            except Exception as se:
+                print(f"  Could not stat file_path: {se}")
+        else:
+            print(f"  ERROR: file not found at {file_path!r}, returning None")
             return None
-            
+
         # Create shortcut with preserved name
-        shortcut_path = self.create_preserve_name_shortcut(file_path)
+        print(f"  [step A] Calling create_preserve_name_shortcut({file_path!r}) ...")
+        try:
+            shortcut_path = self.create_preserve_name_shortcut(file_path)
+        except Exception as e:
+            tb = _traceback.format_exc()
+            print(f"  [step A] EXCEPTION in create_preserve_name_shortcut: {type(e).__name__}: {e}\n{tb}")
+            return None
+        print(f"  [step A] create_preserve_name_shortcut returned: {shortcut_path!r}")
+
         if not shortcut_path:
+            print(f"  [step A] FAIL: create_preserve_name_shortcut returned None/empty")
             return None
-            
+
+        shortcut_exists = os.path.exists(shortcut_path)
+        print(f"  [step A] shortcut file exists on disk: {shortcut_exists}")
+        if shortcut_exists:
+            try:
+                sc_stat = os.stat(shortcut_path)
+                print(f"  [step A] shortcut stat: size={sc_stat.st_size}  mode={oct(sc_stat.st_mode)}")
+            except Exception as se:
+                print(f"  [step A] Could not stat shortcut: {se}")
+
         # Get startup folder
-        startup_folder = self.get_path_to_startup_folder()
-        if not startup_folder:
-            print("Could not determine startup folder")
+        print(f"  [step B] Calling get_path_to_startup_folder() ...")
+        try:
+            startup_folder = self.get_path_to_startup_folder()
+        except Exception as e:
+            tb = _traceback.format_exc()
+            print(f"  [step B] EXCEPTION in get_path_to_startup_folder: {type(e).__name__}: {e}\n{tb}")
             return None
-            
+        print(f"  [step B] get_path_to_startup_folder returned: {startup_folder!r}")
+
+        if not startup_folder:
+            print(f"  [step B] FAIL: startup_folder is None/empty, returning None")
+            return None
+
+        startup_folder_exists = os.path.exists(startup_folder)
+        print(f"  [step B] startup_folder exists: {startup_folder_exists}")
+        if startup_folder_exists:
+            try:
+                sf_contents = os.listdir(startup_folder)
+                print(f"  [step B] startup_folder contents ({len(sf_contents)} items): {sf_contents}")
+            except Exception as le:
+                print(f"  [step B] Could not list startup_folder: {le}")
+        else:
+            print(f"  [step B] WARNING: startup_folder does not exist: {startup_folder!r}")
+
         # Copy shortcut to startup folder
         shortcut_name = os.path.basename(shortcut_path)
         startup_shortcut_path = os.path.join(startup_folder, shortcut_name)
-        
+        print(f"  [step C] shortcut_name={shortcut_name!r}  startup_shortcut_path={startup_shortcut_path!r}")
+
         try:
+            print(f"  [step C] Calling shutil.copy2({shortcut_path!r}, {startup_shortcut_path!r}) ...")
             shutil.copy2(shortcut_path, startup_shortcut_path)
-            print(f"Shortcut moved to startup folder: {startup_shortcut_path}")
-            
+            print(f"  [step C] copy2 complete — shortcut at: {startup_shortcut_path!r}")
+
+            # Verify the copy
+            copy_exists = os.path.exists(startup_shortcut_path)
+            print(f"  [step C] Destination file exists after copy: {copy_exists}")
+            if copy_exists:
+                try:
+                    cp_stat = os.stat(startup_shortcut_path)
+                    print(f"  [step C] Destination stat: size={cp_stat.st_size}  mode={oct(cp_stat.st_mode)}")
+                except Exception as se:
+                    print(f"  [step C] Could not stat destination: {se}")
+
             # Clean up original shortcut
+            print(f"  [step C] Removing original shortcut: {shortcut_path!r}")
             os.remove(shortcut_path)
-            print(f"Deleted original shortcut: {shortcut_path}")
-            
+            print(f"  [step C] Original shortcut removed")
+
+            print(f"  === [create_shortcut_and_move_to_startup] SUCCESS: {startup_shortcut_path!r} ===")
             return startup_shortcut_path
+
         except Exception as e:
-            print(f"Error moving shortcut to startup folder: {e}")
+            tb = _traceback.format_exc()
+            print(f"  [step C] EXCEPTION moving shortcut to startup: {type(e).__name__}: {e}\n{tb}")
             return None
 
 

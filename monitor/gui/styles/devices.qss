@@ -1,0 +1,43 @@
+/* Device Status Table Styles */
+
+QTableView#devicesTable {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    gridline-color: #f0f0f0;
+    selection-background-color: transparent;
+    alternate-background-color: #f8f9fa;
+}
+
+QTableView#devicesTable::item {
+    padding: 12px 8px;
+    border: none;
+    border-bottom: 1px solid #f0f0f0;
+    font-family: "DejaVu Sans", "Liberation Sans", "Noto Sans", Arial, sans-serif;
+    font-size: 14px;
+    color: #2d3142;
+    min-height: 24px;
+}
+
+QTableView#devicesTable QAbstractItemView::item {
+    icon-size: 20px 20px;
+}
+
+QTableView#devicesTable::item:selected {
+    background-color: transparent;
+}
+
+QTableView#devicesTable::item:focus {
+    background-color: transparent;
+    outline: none;
+}
+
+QTableView#devicesTable QHeaderView::section {
+    background-color: #f0f2f5;
+    color: #4a4e69;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 8px;
+    border: none;
+    border-bottom: 2px solid #d0d4db;
+}

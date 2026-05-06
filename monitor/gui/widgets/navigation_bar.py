@@ -40,6 +40,7 @@ class NavigationBar(QWidget):
         # ---- buttons ----------------------------------------------------------------
         for label, page, icon in [
             ("Alerts", "alerts", "warning.svg"),
+            ("Devices", "devices", "group_white.svg"),
             ("Restarts", "restarts", "restart_history.svg"),
             ("Contacts", "contacts", "contacts.svg"),
             ("Settings", "settings", "settings.svg"),

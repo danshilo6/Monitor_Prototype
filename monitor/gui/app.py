@@ -590,92 +590,59 @@ def authenticate_with_server_auto(config_service: ConfigService, server_manager:
 
 def authenticate_with_server(config_service: ConfigService, server_manager: ServerManager, parent=None) -> bool:
     """
-    Authenticate with server using hardcoded password and config location.
-    Returns True if authentication succeeds, False otherwise.
-    
+    Authenticate with server using the new /register_and_get_signed_id endpoint.
+    Polls every 60 seconds until the device is approved by an admin.
+
     Args:
         config_service: Configuration service instance
         server_manager: Server manager instance
         parent: Parent widget for dialogs (optional, unused)
-        
+
     Returns:
         bool: True if authenticated and monitoring should start, False otherwise
     """
     logger = get_logger("monitor.gui.app")
-    
+
     try:
         # Check if device ID exists and is approved on server
         id_exists, id_approved = server_manager.check_id_exists_and_approved()
         logger.info(f"Server check - ID exists: {id_exists}, ID approved: {id_approved}")
-        
-        id = config_service.get("device", "signed_id", "")
-        print(f"\nSIGNED_ID: {id}\n")
-        if not id:
-            id = ""
-        
-        # If already approved, proceed with monitoring
-        if id_approved and id_exists and id != "":
+
+        curr_signed_id = config_service.get("device", "signed_id", "")
+        print(f"\nSIGNED_ID: {curr_signed_id}\n")
+        if not curr_signed_id:
+            curr_signed_id = ""
+
+        # If already approved and we have a signed ID, no need to re-register
+        if id_approved and id_exists and curr_signed_id != "":
             logger.info("Device already approved - authentication successful")
             return True
 
-        # Get location name from config (should already be set by setup_location_name)
-        location_name = config_service.get("general", "location_name", "")
-        print(f"LOCATION NAME: {location_name}\n")
+        # --- Register with new endpoint and poll until approved ---
+        device_id = server_manager.os_manager.generate_device_id()
+        location = config_service.get("general", "location_name", "")
+        monitor_version = config_service._get_monitor_version()
 
-        # Use hardcoded password
-        password = "Bulltech2023"
-        
-        logger.info(f"Auto-authenticating with location: '{location_name}'")
-        
-        # Update server manager with location name
-        server_manager.update_location_name(location_name)
-        logger.info(f"Location name updated in server manager: {location_name}")
+        logger.info(f"Starting registration polling for device: {device_id[:8]}..., location: '{location}'")
+        print(f"DEBUG: Starting registration polling - location: {location}")
 
-        # Attempt authentication with server
-        logger.info("Attempting automated server authentication")
-        print("DEBUG: Starting authentication pulse to server...")
-        is_password_correct, download_files, signed_id = server_manager.pulse_to_server(
-            password, 
-            return_id=True
-        )
-        print(f"DEBUG: Authentication pulse completed - Password correct: {is_password_correct}")
-        
-        if is_password_correct:
-            logger.info("Automated authentication successful")
-            
-            # Save the signed ID to config
-            if signed_id:
-                config_service.set("device", "signed_id", signed_id)
-                logger.info("Signed ID saved to configuration")
-            
-            # Handle download flags from authentication pulse using decision engine logic
-            if download_files:
-                logger.info("Handling download flags from authentication pulse")
-                print(f"DEBUG: Download flags from authentication: {download_files}")
-                
-                # Import and use the decision engine's download handling methods
-                from monitor.core.decision_engine import DecisionEngine
-                
-                # Create a temporary decision engine instance to use its methods
-                temp_decision_engine = DecisionEngine(
-                    config_service=config_service,
-                    server_manager=server_manager,
-                    logs_directory=Path("logs"),  # Minimal path needed
-                    data_directory=Path("data")   # Minimal path needed
-                )
-                
-                # Use decision engine's download handling logic
-                if temp_decision_engine._save_download_flags(download_files):
-                    logger.info("Download flags saved - preparing monitor downloader")
-                    temp_decision_engine._prepare_monitor_downloader()
-            
-            return True
-        else:
-            logger.error("Automated authentication failed - incorrect password")
-            return False
-                
+        while True:
+            approved, signature = server_manager.register_and_get_signed_id(
+                device_id, location, monitor_version
+            )
+
+            if approved and signature:
+                config_service.set("device", "signed_id", signature)
+                logger.info("Device approved - signature saved to config")
+                print("DEBUG: Device approved, authentication successful")
+                return True
+
+            logger.info("Device not yet approved - retrying in 60 seconds...")
+            print("DEBUG: Waiting for admin approval... (retrying in 60s)")
+            time.sleep(60)
+
     except Exception as e:
-        logger.error(f"Error during automated server authentication: {e}")
+        logger.error(f"Error during server authentication: {e}")
         return False
 
 
@@ -860,15 +827,6 @@ def check_and_spawn_terminal():
             
             print("DEBUG: No supported terminal emulator found")
             return False
-            
-        elif platform.system() == "Windows":
-            # On Windows, use cmd to spawn new console window
-            cmd_str = ' '.join(f'"{arg}"' for arg in cmd_args)
-            full_cmd = f'{cmd_str} & pause'
-            
-            subprocess.Popen(['cmd', '/c', 'start', 'cmd', '/k', full_cmd])
-            print("DEBUG: Spawned new console window on Windows")
-            return True
             
         else:
             print(f"DEBUG: Unsupported platform for terminal spawning: {platform.system()}")
